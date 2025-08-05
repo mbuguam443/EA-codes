@@ -14,14 +14,33 @@
 //+------------------------------------------------------------------+
 //|Inputs                                                            |
 //+------------------------------------------------------------------+
+input group "====General Inputs==="
 input long InpMagicNumber=12345; //magic number
-input double InpLots=0.01;       //lot size
 
-input int InpTakeProfit=200;       //TakeProfit in % of the range (0=off)
-input int InpStopLoss=150;        //stop loss in % of the range  (0=off)
-input int InpRangeStart=600;     // range start time in minutes
-input int InpRangeDuration=120;   // range duration in minutes
+enum LOT_MODE_ENUM{
+  LOT_MODE_FIXED,  // fixed lots
+  LOT_MODE_MONEY,  //lot based on money
+  LOT_MODE_PCT_ACCOUNT //lots based on percent of account (lot must be %)
+};
+input LOT_MODE_ENUM InpLotMode=LOT_MODE_PCT_ACCOUNT; //lot mode
+
+input double InpLots=4;       //lots / money/ %
+
+input int InpTakeProfit=0;       //TakeProfit in % of the range (0=off)
+input int InpStopLoss=90;        //stop loss in % of the range  (0=off)
+input bool InpStopLossTrailing=false; // Trailing stop loss
+input group "Range Setting"
+input int InpRangeStart=90;     // range start time in minutes
+input int InpRangeDuration=270;   // range duration in minutes
 input int InpRangeClose=1200 ;    //range close time in minutes (-1=off)
+
+enum BREAKOUT_MODE_ENUM{
+    ONE_SIGNAL,                   //one signal per breakout range
+    TWO_SIGNAL,                   //two signal per breakout range (high,low)
+};
+
+input BREAKOUT_MODE_ENUM InpBreakoutMode =ONE_SIGNAL;  //breakout mode
+input group "====RangeDays Inputs==="
 input bool InpMonday=true;        // range on Monday 
 input bool InpTuesday=true;        // range on Tuesday
 input bool InpWednesday=true;        // range on Wednesday
@@ -42,7 +61,7 @@ struct RANGE_STRUCT
    bool f_high_breakout; // flag if a high breakout occurred
    bool f_low_breakout;  //flag if a low breakout occurred
    
-   RANGE_STRUCT() : start_time(0),end_time(0),close_time(0),high(0),low(99999),f_entry(false),f_high_breakout(false),f_low_breakout(false){};
+   RANGE_STRUCT() : start_time(0),end_time(0),close_time(0),high(0),low(DBL_MAX),f_entry(false),f_high_breakout(false),f_low_breakout(false){};
    
   };
 
@@ -54,52 +73,19 @@ CTrade trade;
 int OnInit()
   {
   
-   if(InpMagicNumber<=0)
-     {
-      Alert("Magic number <= 0");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-   if(InpLots<=0 || InpLots > 1)
-     {
-      Alert("InpLots<=0 or InpLots > 1");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-   if(InpStopLoss<0 || InpStopLoss > 1000)
-     {
-      Alert("InpStopLoss < 0 or InpStopLoss > 1000");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-   if(InpTakeProfit<0 || InpTakeProfit > 1000)
-     {
-      Alert("InpTakeProfit < 0 or InpTakeProfit > 1000");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-   if(InpRangeClose<0 && InpStopLoss ==0)
-     {
-      Alert("Close time and stop loss are off");
-      return INIT_PARAMETERS_INCORRECT;
-     }       
-   if(InpRangeStart<0 || InpRangeStart >= 1440)
-     {
-      Alert("InpRangeStart<0 or InpRangeStart >= 1440");
-      return INIT_PARAMETERS_INCORRECT;
-     } 
-    if(InpRangeDuration<=0 || InpRangeDuration >= 1440)
-     {
-      Alert("InpRangeDuration<=0 or InpRangeDuration > 1");
-      return INIT_PARAMETERS_INCORRECT;
-     } 
-    if(InpRangeClose >= 1440 || (InpRangeStart+InpRangeDuration)%1440==InpRangeClose)
-     {
-      Alert("InpRangeClose<0 or InpRangeClose >= 1440 or endtime is equal to close time");
-      return INIT_PARAMETERS_INCORRECT;
-     } 
-    if(_UninitReason==REASON_PARAMETERS)
+      if(!CheckInputs())
       {
-       CalculateRange();
-      }  
-      
+          return INIT_PARAMETERS_INCORRECT;
+      }
+         
+       if(_UninitReason==REASON_PARAMETERS && CountOpenPositions()==0)
+      {
+        CalculateRange();
+      }
       trade.SetExpertMagicNumber(InpMagicNumber);
+      
+     //Draw Objects again when change in TimeFrame 
+      DrawObjects(); 
          
    return(INIT_SUCCEEDED);
   }
@@ -163,6 +149,12 @@ void OnTick()
      }
      //Print("open positions: ",CountOpenPositions());
     CheckBreakOut(); 
+    
+    //update StopTrailing
+    if(InpStopLossTrailing)
+      {
+       UpdateStopLoss();
+      }
    
   }
 //+------------------------------------------------------------------+
@@ -176,24 +168,34 @@ void CheckBreakOut()
       if(!range.f_high_breakout && lastTick.ask >=range.high)
         {
           range.f_high_breakout=true;
+          if(InpBreakoutMode==ONE_SIGNAL){range.f_low_breakout=true;}
           //open a Position
           
           //calculate stoploss and Take profit
           double sl=InpStopLoss==0?0: NormalizeDouble(lastTick.bid-(range.high-range.low)*InpStopLoss*0.01,_Digits);
           double tp=InpTakeProfit==0?0:NormalizeDouble(lastTick.bid+(range.high-range.low)*InpTakeProfit*0.01,_Digits);
-          trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLots,lastTick.ask,sl,tp,"range buy");
+          //calculate lots
+          double lots;
+          if(!CalculateLots(lastTick.bid-sl,lots)){return;}
+          
+          trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,lots,lastTick.ask,sl,tp,"range buy");
         }
         
        //check if we had a low breakout
       if(!range.f_low_breakout && lastTick.bid <=range.low)
         {
           range.f_low_breakout=true;
+          if(InpBreakoutMode==ONE_SIGNAL){range.f_high_breakout=true;}
           //open a Position
           
           //calculate stoploss and Take profit
           double sl=InpStopLoss==0?0:NormalizeDouble(lastTick.ask+(range.high-range.low)*InpStopLoss*0.01,_Digits);
           double tp=InpTakeProfit==0?0:NormalizeDouble(lastTick.ask-(range.high-range.low)*InpTakeProfit*0.01,_Digits);
-          trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLots,lastTick.bid,sl,tp,"range sell");
+          
+          //calculate lots
+          double lots;
+          if(!CalculateLots(sl-lastTick.ask,lots)){return;}
+          trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,lots,lastTick.bid,sl,tp,"range sell");
         }  
     }
 }
@@ -207,7 +209,7 @@ void CalculateRange()
   range.end_time=0;
   range.close_time=0;
   range.high=0.0;
-  range.low=999999;
+  range.low=DBL_MAX;
   range.f_entry=false;
   range.f_high_breakout=false;
   range.f_low_breakout=false;
@@ -220,7 +222,7 @@ void CalculateRange()
      MqlDateTime tmp;
      TimeToStruct(range.start_time,tmp);
      int dow=tmp.day_of_week;
-     if(lastTick.time>=range.start_time || dow==6 || dow ==0)
+     if(lastTick.time>=range.start_time || dow==6 || dow ==0 || (dow==1 && !InpMonday)|| (dow==2 && !InpTuesday)|| (dow==3 && !InpWednesday)|| (dow==4 && !InpThursday)|| (dow==5 && !InpFriday))
        {
         range.start_time+=time_cycle;
        }
@@ -314,7 +316,7 @@ void DrawObjects()
     }   
     
   string rangelow = "range_low_" + IntegerToString(GetTickCount());
-  if(range.low <9999999)
+  if(range.low <DBL_MAX)
     {
       ObjectCreate(NULL,rangelow,OBJ_TREND,0,range.start_time,range.low,range.end_time,range.low);
       ObjectSetString(NULL,rangelow,OBJPROP_TOOLTIP,"low of the range \n"+DoubleToString(range.low,_Digits));
@@ -332,8 +334,8 @@ void DrawObjects()
     } 
     
     
-       
-    
+   //refresh chart    
+   ChartRedraw(); 
 
 }
 
@@ -375,7 +377,7 @@ bool ClosePositions()
 
 }
 
-
+//count all the positions
 int CountOpenPositions()
 {
   int counter=0;
@@ -398,4 +400,184 @@ int CountOpenPositions()
     }
     
     return counter;
+}
+
+//check inputs
+bool CheckInputs()
+{
+  if(InpMagicNumber<=0)
+     {
+      Alert("Magic number <= 0");
+      return false;
+     }
+   if(InpLotMode==LOT_MODE_FIXED && (InpLots<=0 || InpLots >10))
+     {
+      Alert("InpLots<=0 or InpLots > 10");
+      return false;
+     }
+   if(InpLotMode==LOT_MODE_PCT_ACCOUNT && (InpLots<=0 || InpLots >20))
+     {
+      Alert("InpLots<=0 or InpLots > 20");
+      return false;
+     }
+   if((InpLotMode==LOT_MODE_MONEY ||InpLotMode==LOT_MODE_PCT_ACCOUNT) && (InpStopLoss ==0))
+     {
+      Alert("Selected lotmode need a stoploss");
+      return false;
+     }  
+    if(InpLotMode==LOT_MODE_MONEY && (InpLots<=0 || InpLots >20))
+     {
+      Alert("InpLots<=0 or InpLots > 5");
+      return false;
+     }   
+   if(InpStopLoss<0 || InpStopLoss > 1000)
+     {
+      Alert("InpStopLoss < 0 or InpStopLoss > 1000");
+      return false;
+     }
+   if(InpTakeProfit<0 || InpTakeProfit > 1000)
+     {
+      Alert("InpTakeProfit < 0 or InpTakeProfit > 1000");
+      return false;
+     }
+   if(InpRangeClose<0 && InpStopLoss ==0)
+     {
+      Alert("Close time and stop loss are off");
+      return false;
+     }       
+   if(InpRangeStart<0 || InpRangeStart >= 1440)
+     {
+      Alert("InpRangeStart<0 or InpRangeStart >= 1440");
+      return false;
+     } 
+    if(InpRangeDuration<=0 || InpRangeDuration >= 1440)
+     {
+      Alert("InpRangeDuration<=0 or InpRangeDuration > 1");
+      return false;
+     } 
+    if(InpRangeClose >= 1440 || (InpRangeStart+InpRangeDuration)%1440==InpRangeClose)
+     {
+      Alert("InpRangeClose >= 1440 or endtime is equal to close time");
+      return false;
+     }
+     if(InpMonday+InpTuesday+InpWednesday+InpThursday+InpFriday==0)
+     {
+      Alert("Range is prohibited in all days of the week");
+      return false;
+     } 
+   
+  return true;
+}
+
+
+//calculate lots
+
+bool CalculateLots(double slDistance, double &lots)
+{
+  lots=0.0;
+  
+  if(InpLotMode==LOT_MODE_FIXED)
+    {
+     lots=InpLots;
+    }else
+    {
+     double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+     double tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+     double volumestep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+     
+     double riskMoney=InpLotMode==LOT_MODE_MONEY?InpLots:AccountInfoDouble(ACCOUNT_EQUITY)*InpLots*0.01;
+     double moneyVolumeStep=(slDistance/tickSize)*tickValue*volumestep;
+     
+     lots=MathFloor(riskMoney/moneyVolumeStep)*volumestep;
+        
+    }
+    Print("Calculated  lots: ",lots);
+    //check calculated lots
+    if(!CheckLots(lots)){return false;}
+    
+  return true;
+}
+
+
+//check lots
+bool CheckLots(double &lots)
+{
+  double min=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+  double max=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+  double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+  
+  if(lots<min)
+    {
+     Print("Lotsize will be set to minimum lot value lots: ",lots);
+     lots=min;
+    }
+    if(lots>max)
+    {
+     Print("Lotsize will be set to maximum lot value, lots: ",lots);
+     lots=max;
+    }
+    
+    lots=(int)MathFloor(lots/step)*step;
+    Print("Calculated check lots: ",lots," max | min :",max," ",min);
+  return true;
+}
+
+//update Stop Loss
+void UpdateStopLoss()
+{
+  //return if no stop loss
+  if(InpStopLoss==0 || !InpStopLossTrailing){return;}
+  //loop through open Positions
+  int total=PositionsTotal();
+  for(int i=total-1;i>=0;i--)
+    {
+     ulong ticket=PositionGetTicket(i);
+     if(ticket<=0){Print("Failed to get Position Ticket"); return ;}
+     if(!PositionSelectByTicket(ticket)){Print("unable to select position by ticket"); return ;}
+     
+     long magicnumber;
+     if(!PositionGetInteger(POSITION_MAGIC,magicnumber)){Print("Failed to get Position Magic number"); return ;}
+     
+     if(InpMagicNumber==magicnumber)
+       {
+         //type of position
+         long type;
+         if(!PositionGetInteger(POSITION_TYPE,type)){Print("Failed to get Position type"); return;}
+         
+         //get current sl and tp
+         double currSL,currTP;
+         if(!PositionGetDouble(POSITION_SL,currSL)){Print("Failed to get Position sL"); return;}
+         if(!PositionGetDouble(POSITION_TP,currTP)){Print("Failed to get Position TP"); return;}
+         
+         //calculate new Stop loss
+         double currPrice=type==POSITION_TYPE_BUY?lastTick.bid:lastTick.ask;
+         int n =type==POSITION_TYPE_BUY?1:-1;
+         
+         double newSL=NormalizeDouble(currPrice-((range.high-range.low) * InpStopLoss*0.01*n),_Digits);
+         
+         //check if new stoploss is closer to current price than the existing stop loss
+         if((newSL*n) < (currSL*n) || NormalizeDouble(MathAbs(newSL-currSL),_Digits)<_Point)
+           {
+            //Print("No new Stop loss needed");
+            continue;
+           }
+           
+         //check for stop level
+         long level=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL); 
+         if(level!=0 && MathAbs(currPrice-newSL)<=level*_Point)
+           {
+            Print("New Stop loss inside stop level");
+            continue;
+           }  
+           
+           //modify trade
+           if(!trade.PositionModify(ticket,newSL,currTP))
+             {
+              Print("Failed to Modify Position: ",(string)ticket," currSl: ",(string)currSL," currTP: ",(string)currTP);
+              return;
+             }
+           
+       }
+    }
+    
 }
