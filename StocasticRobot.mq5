@@ -293,9 +293,10 @@ bool CheckClearBars(bool buy_sell)
          {
            if(InpClearBarsReversed)
              {
+              Print("we have detected close crossover between ",(i-1)," and ",i," at the upper side");
               return true;
              }else{
-             Print("Clear Bars prevented ",buy_sell?"buy":"sell","signal cross of upper level at index",(i-1),"->",i);
+             Print("you said No so ",buy_sell?"buy":"sell"," position will not  be open bz signal cross of upper level at index",(i-1),"->",i);
              return false;
              }
          }
@@ -305,9 +306,10 @@ bool CheckClearBars(bool buy_sell)
          {
            if(InpClearBarsReversed)
              {
+               Print("we open ",buy_sell?"buy":"sell","position bz have detected close crossover between ",(i-1)," and ",i," at the lower side ");
               return true;
              }else{
-             Print("Clear Bars prevented ",buy_sell?"buy":"sell","signal cross of lower level at index",(i-1),"->",i);
+             Print("you said No so  ",buy_sell?"buy":"sell"," Position will not be happen bz close signal cross of lower level at index",(i-1),"->",i);
              return false;
              }
          }
@@ -315,10 +317,11 @@ bool CheckClearBars(bool buy_sell)
     
     if(InpClearBarsReversed)
       {
-       Print("Clear Bars prevented ",buy_sell?"buy":"sell","signal detected");
+       Print("end cond we are unable to open ",buy_sell?"buy":"sell","position bz no crossover detected ");
        return false;
       }else
          {
+          Print("Clear bar disabled at a distance of  bar of: ",(3+InpClearBars));
           return true;
          }              
                   
