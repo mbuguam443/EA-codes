@@ -102,8 +102,8 @@ void OnTick()
      if(InpCloseSignal){if(!ClosePositions(2)){return;}}
      double sl=InpStopLoss==0?0:cT.bid-InpStopLoss*_Point;
      double tp=InpTakeProfit==0?0:cT.bid+InpTakeProfit*_Point;
-     if(!NormalizePrice(sl,sl)){Print("Failed to Normalize Sl Price"); return;}
-     if(!NormalizePrice(tp,tp)){Print("Failed to Normalize Tp Price"); return;}
+     if(!NormalizePrice(sl)){Print("Failed to Normalize Sl Price"); return;}
+     if(!NormalizePrice(tp)){Print("Failed to Normalize Tp Price"); return;}
      trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLotSize,cT.ask,sl,tp,"Stocastic Buy");
      
     }
@@ -114,8 +114,8 @@ void OnTick()
      if(InpCloseSignal){if(!ClosePositions(1)){return;}}
      double sl=InpStopLoss==0?0:cT.ask+InpStopLoss*_Point;
      double tp=InpTakeProfit==0?0:cT.ask-InpTakeProfit*_Point;
-     if(!NormalizePrice(sl,sl)){Print("Failed to Normalize Sl Price"); return;}
-     if(!NormalizePrice(tp,tp)){Print("Failed to Normalize Tp Price"); return;}
+     if(!NormalizePrice(sl)){Print("Failed to Normalize Sl Price"); return;}
+     if(!NormalizePrice(tp)){Print("Failed to Normalize Tp Price"); return;}
      trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLotSize,cT.bid,sl,tp,"Stocastic Sell");
     }
   }
@@ -211,11 +211,11 @@ bool CountOpenPositions(int &cntBuy, int &cntSell)
   return true;
 }
 
-bool NormalizePrice(double price, double &normalizeprice)
+bool NormalizePrice(double &price)
 {
   double tickSize=0;
   if(!SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE,tickSize)){Print("Failed to get tick size"); return false;}
-  normalizeprice=NormalizeDouble(MathRound(price/tickSize)*tickSize,_Digits);
+  price=NormalizeDouble(MathRound(price/tickSize)*tickSize,_Digits);
   return true;
 }
 

@@ -1,8 +1,3 @@
-//+------------------------------------------------------------------+
-//|                                           BollingerBandRobot.mq5 |
-//|                                  Copyright 2025, MetaQuotes Ltd. |
-//|                                             https://www.mql5.com |
-//+------------------------------------------------------------------+
 #property copyright "Copyright 2025, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
 #property version   "1.00"
@@ -11,25 +6,20 @@
 //+------------------------------------------------------------------+
 #include <Trade/Trade.mqh>
 //+------------------------------------------------------------------+
-//| Inputs                                                           |
+//|Inputs                                                            |
 //+------------------------------------------------------------------+
-static input long InpMagicNumber=87637; //magic number
-static input double InpLotSize =0.01;   //lot size
-input  bool         InpCloseByMiddleline=false; //Close by Middle Line
-
-input int InpPeriod            =21;     //period
-input double InpDeviation      =2.0;    //Deviation
-input int InpStopLoss          =200;    //Stoploss in points
-input int InpTakeProfit        =500;    //Take Profit (0=off) points
-
+static input long InpMagicNumber=765678;   //magic number
+static input double InpLotSize=0.01;       //Lot Size
+input  int        InpRSIPeriod=21;         //rsi period
+input  int        InpRSILevel =70;         //rsi upper level
+input  int        InpStopLoss =200;        //stop loss in points (0=ff)
+input  int        InpTakeProfit=600;       //Take Profit in points (0=ff)
+input  bool       InpCloseSignal=false;    //close trade by opposite signal
 //+------------------------------------------------------------------+
-//|Global Variables                                                  |
+//|Global variables                                                  |
 //+------------------------------------------------------------------+
 int handle;
-double upperBuffer[];
-double lowerBuffer[];
-double middleBuffer[];
-
+double buffer[];
 MqlTick currentTick;
 CTrade trade;
 datetime openTimeBuy=0;
@@ -40,52 +30,48 @@ datetime openTimeSell=0;
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
+
 int OnInit()
   {
-   if(InpMagicNumber<=0)
-     {
-      Alert("magicnumber <=0");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-   if(InpLotSize<=0)
-     {
-      Alert("Lotsize <=0");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-   if(InpPeriod<=1)
-     {
-      Alert("Period<=1");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-    if(InpDeviation<=0)
-     {
-      Alert("Deviation<=1");
-      return INIT_PARAMETERS_INCORRECT;
-     } 
-     if(InpStopLoss<=0)
-     {
-      Alert("StopLoss<=0");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-     if(InpTakeProfit<0)
-     {
-      Alert("TakeProfit<=0");
-      return INIT_PARAMETERS_INCORRECT;
-     } 
-     
-     //set Magic Number 
-     trade.SetExpertMagicNumber(InpMagicNumber);   
-     //create handle indicator
-     handle=iBands(_Symbol,PERIOD_CURRENT,InpPeriod,1,InpDeviation,PRICE_CLOSE);
-     if(handle==INVALID_HANDLE)
-       {
-        Alert("Failed to Load Bollinger bands");
-        return INIT_FAILED;
-       }
-     ArraySetAsSeries(upperBuffer,true);  
-     ArraySetAsSeries(middleBuffer,true);
-     ArraySetAsSeries(lowerBuffer,true);
-   
+    //check user inputs
+    if(InpMagicNumber<=0)
+      {
+       Alert("wrong input: MagicNumber<=0");
+       return INIT_PARAMETERS_INCORRECT;
+      }
+    if(InpLotSize<=0 || InpLotSize>10)
+      {
+       Alert("wrong input: LotSize<=0 or LotSize>10 ");
+       return INIT_PARAMETERS_INCORRECT;
+      }
+    if(InpRSIPeriod<=1)
+      {
+       Alert("wrong input: RSIPeriod<=0");
+       return INIT_PARAMETERS_INCORRECT;
+      }
+    if(InpRSILevel>=100 || InpRSILevel<=50)
+      {
+       Alert("wrong input: RSILevel<=50 or RSILevel>=100 ");
+       return INIT_PARAMETERS_INCORRECT;
+      }
+      if(InpStopLoss<0)
+      {
+       Alert("wrong input: StopLoss<=0 ");
+       return INIT_PARAMETERS_INCORRECT;
+      }
+      if(InpTakeProfit<0)
+      {
+       Alert("wrong input: TakeProfit<0 ");
+       return INIT_PARAMETERS_INCORRECT;
+      }
+      //set the magic number
+      trade.SetExpertMagicNumber(InpMagicNumber);
+      //create RSI handle
+      handle=iRSI(_Symbol,PERIOD_CURRENT,InpRSIPeriod,PRICE_CLOSE);
+      if(handle==INVALID_HANDLE){Print("Failed to create indicator handle");  return INIT_FAILED;} 
+      //set Buffer as series
+      ArraySetAsSeries(buffer,true);
+            
    return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
@@ -93,67 +79,58 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-    //release indicator handle
-    if(handle!=INVALID_HANDLE)
-      {
-       IndicatorRelease(handle);
-      }   
+    //release the indicator
+    if(handle!=INVALID_HANDLE){IndicatorRelease(handle);}
+   
   }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   //check if current tick is a bar open tick
-   if(!IsNewBar()){ return;}
-   //Get current Tick
-   if(!SymbolInfoTick(_Symbol,currentTick)){Print("Failed to get Tick"); return;}
-   //get Indicator Values
-   int values=CopyBuffer(handle,0,0,1,middleBuffer)+CopyBuffer(handle,1,0,1,upperBuffer)+CopyBuffer(handle,2,0,1,lowerBuffer);
-   
-   if(values!=3){Print("Indicator value failed to fetch"); return;}
-   
-   //count Positions
-   int cntBuy,cntSell;
-   if(!CountOpenPositions(cntBuy,cntSell)){return;}  
-   
-   //check for lower band cross to open buy position
-   if(cntBuy==0 && currentTick.ask<=lowerBuffer[0] && openTimeBuy!=iTime(_Symbol,PERIOD_CURRENT,0))
-   {
-     openTimeBuy=iTime(_Symbol,PERIOD_CURRENT,0);
-     double sl=currentTick.bid-InpStopLoss*_Point;
-     double tp=InpTakeProfit==0?0:currentTick.bid+InpTakeProfit*_Point;
-     if(!NormalizePrice(sl)){Print("Unable to normalize sl "); return;}
-     if(!NormalizePrice(tp)){Print("Unable to normalize  tp"); return;}
+    //get the current Tick
+    if(!SymbolInfoTick(_Symbol,currentTick)){Print("unable to get current Tick"); return;}
+    //get the rsi value
+    int values=CopyBuffer(handle,0,1,2,buffer);
+    if(values!=2){Print("unable to get indicator values"); return;}
+    
+    
+    Comment("Buffer[1]: ",buffer[1],"\nBuffer[0]: ",buffer[0]);
+    
+    //count positions
+    int cntBuy,cntSell;
+    if(!CountOpenPositions(cntBuy,cntSell)){ Print("unable to count open positions"); return;}
+    //check for buy Positions
+    if(cntBuy==0 && (buffer[1]<=(100-InpRSILevel) && buffer[0]>(100-InpRSILevel))  && openTimeBuy!=iTime(_Symbol,PERIOD_CURRENT,0))
+      {
+         Print("Buy Now ");
+         openTimeBuy=iTime(_Symbol,PERIOD_CURRENT,0);
+         if(InpCloseSignal){if(!ClosePositions(2)){return;}}
+         double sl=InpStopLoss==0?0:currentTick.bid-InpStopLoss*_Point;
+         double tp=InpTakeProfit==0?0:currentTick.bid+InpTakeProfit*_Point;
+         if(!NormalizePrice(sl)){Print("Unable to normalize sl"); return;}
+         if(!NormalizePrice(tp)){Print("Unable to normalize tp"); return;}
+         trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLotSize,currentTick.ask,sl,tp,"RSI Buy"); 
+      }
      
-     trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLotSize,currentTick.ask,sl,tp,"BolingerBand Buy");
+     //check for sell Positions
+    if(cntSell==0 && (buffer[1]>=InpRSILevel && buffer[0]<InpRSILevel) && openTimeSell!=iTime(_Symbol,PERIOD_CURRENT,0))
+      {
+         Print("Sell Now ");
+         openTimeSell=iTime(_Symbol,PERIOD_CURRENT,0);
+         if(InpCloseSignal){if(!ClosePositions(1)){return;}}
+         double sl=InpStopLoss==0?0:currentTick.ask+InpStopLoss*_Point;
+         double tp=InpTakeProfit==0?0:currentTick.ask-InpTakeProfit*_Point;
+         if(!NormalizePrice(sl)){Print("Unable to normalize sl"); return;}
+         if(!NormalizePrice(tp)){Print("Unable to normalize tp"); return;}
+         trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLotSize,currentTick.bid,sl,tp,"RSI Sell"); 
+      } 
    
-   }
-   
-   //check for upper band cross to open sell position
-   if(cntSell==0 && currentTick.ask>=upperBuffer[0] && openTimeSell!=iTime(_Symbol,PERIOD_CURRENT,0))
-   {
-     openTimeSell=iTime(_Symbol,PERIOD_CURRENT,0);
-     double sl=currentTick.ask+InpStopLoss*_Point;
-     double tp=InpTakeProfit==0?0:currentTick.ask-InpTakeProfit*_Point;
-     if(!NormalizePrice(sl)){Print("Unable to normalize sl "); return;}
-     if(!NormalizePrice(tp)){Print("Unable to normalize  tp"); return;}
-     
-     trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLotSize,currentTick.bid,sl,tp,"BolingerBand Sell");
-   
-   }
-   
-   if(InpCloseByMiddleline)
-     {
-       if(!CountOpenPositions(cntBuy,cntSell)){return;}
-       if(cntBuy > 0 && currentTick.bid >=middleBuffer[0]){ClosePositions(1);}
-       if(cntSell > 0 && currentTick.ask <=middleBuffer[0]){ClosePositions(2);}
-        
-     }
   }
 //+------------------------------------------------------------------+
 //|Custom functions                                                  |
 //+------------------------------------------------------------------+
+
 
 //check if we have a bar open tick
 bool IsNewBar()
