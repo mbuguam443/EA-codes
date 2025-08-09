@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 //| Defines                                                          |
 //+------------------------------------------------------------------+
-#define NR_CONDITIONS 2 //number of conditions
+#define NR_CONDITIONS 6 //number of conditions
 //+------------------------------------------------------------------+
 //|includes                                                          |
 //+------------------------------------------------------------------+
@@ -18,10 +18,10 @@ enum MODE{
   HIGH=1, //high
   LOW=2,  //low
   CLOSE=3, //close
-  RANGE=4, //abs(high-low)
-  BODY=5,  //abs(open-close)
-  RATIO=6, //range/body
-  VALUE=7, //value
+  RANGE=4, //range abs(high-low)
+  BODY=5,  //body abs(open-close)
+  RATIO=6, //ratio (range/body)
+  VALUE=7, //value 
 };
 
 enum INDEX{
@@ -51,7 +51,8 @@ struct CONDITION{
 
 CONDITION con[NR_CONDITIONS]; //condition array
 MqlTick currentTick;          //current tick of the symbol
-CTrade trade;                  
+CTrade trade; 
+int handleMA;                 
 //+------------------------------------------------------------------+
 //|Inputs                                                            |
 //+------------------------------------------------------------------+
@@ -60,6 +61,11 @@ static input long InpMagicNumber=87656; //magic number
 static input double InpLotSize =0.01;   //Lot Size
 input  int   InpTakeProfit     =600;    //Take profit (0=off)
 input  int   InpStopLoss       =200;    //Stop Loss (0=off)
+input  string InpNameofpattern ="Engulfing bar";  //Candle Pattern Name
+input  group "======Moving average setting====="
+input  bool  InpMaActive     =false;    //activate MA
+input  int   InpMaPeriod     =100;      //MA period
+
 
 input  group "===Condition 1===="
 input  bool  InpCon1Active  =true;     //active
@@ -79,6 +85,42 @@ input  MODE  InpCon2ModeB   =CLOSE;      //mode B
 input  INDEX InpCon2IndexB  =INDEX_1;    //index B
 input  double InpCon2Value  =0;          //value
 
+input  group "===Condition 3===="
+input  bool  InpCon3Active  =false;     //active
+input  MODE  InpCon3ModeA   =OPEN;      //mode A
+input  INDEX InpCon3IndexA  =INDEX_1;    //index A
+input  COMPARE InpCon3compare =GREATER;   //compare
+input  MODE  InpCon3ModeB   =CLOSE;      //mode B
+input  INDEX InpCon3IndexB  =INDEX_1;    //index B
+input  double InpCon3Value  =0;          //value
+
+input  group "===Condition 4===="
+input  bool  InpCon4Active  =false;     //active
+input  MODE  InpCon4ModeA   =OPEN;      //mode A
+input  INDEX InpCon4IndexA  =INDEX_1;    //index A
+input  COMPARE InpCon4compare =GREATER;   //compare
+input  MODE  InpCon4ModeB   =CLOSE;      //mode B
+input  INDEX InpCon4IndexB  =INDEX_1;    //index B
+input  double InpCon4Value  =0;          //value
+
+input  group "===Condition 5===="
+input  bool  InpCon5Active  =false;     //active
+input  MODE  InpCon5ModeA   =OPEN;      //mode A
+input  INDEX InpCon5IndexA  =INDEX_1;    //index A
+input  COMPARE InpCon5compare =GREATER;   //compare
+input  MODE  InpCon5ModeB   =CLOSE;      //mode B
+input  INDEX InpCon5IndexB  =INDEX_1;    //index B
+input  double InpCon5Value  =0;          //value
+
+input  group "===Condition 6===="
+input  bool  InpCon6Active  =false;     //active
+input  MODE  InpCon6ModeA   =OPEN;      //mode A
+input  INDEX InpCon6IndexA  =INDEX_1;    //index A
+input  COMPARE InpCon6compare =GREATER;   //compare
+input  MODE  InpCon6ModeB   =CLOSE;      //mode B
+input  INDEX InpCon6IndexB  =INDEX_1;    //index B
+input  double InpCon6Value  =0;          //value
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
@@ -88,6 +130,16 @@ int OnInit()
    SetInputs();
    //check inputs
    if(!CheckInputs()){ return INIT_PARAMETERS_INCORRECT;}
+   
+   
+   
+   //get Ma indicator
+   handleMA=iMA(_Symbol,PERIOD_CURRENT,InpMaPeriod,0,MODE_SMA,PRICE_CLOSE);
+   if(handleMA==INVALID_HANDLE){Print("unable to load MA indicator"); return INIT_FAILED;}
+     
+      
+    
+    
    //set magic number
    trade.SetExpertMagicNumber(InpMagicNumber);
    return(INIT_SUCCEEDED);
@@ -97,8 +149,7 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-
-   
+    if(handleMA!=INVALID_HANDLE){IndicatorRelease(handleMA);}   
   }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
@@ -114,7 +165,7 @@ void OnTick()
     if(!CountOpenPositions(cntBuy,cntSell)){Print("Failed to count open positions"); return;}
     
     //check condition to open buy condition
-    if(cntBuy==0 && CheckAllConditions(true))
+    if(cntBuy==0 && CheckAllConditions(true) && CheckMAFilter(true))
       {
        //calculate stoploss and Take profit
        double sl=InpStopLoss==0?0:currentTick.bid-InpStopLoss*_Point;
@@ -122,11 +173,15 @@ void OnTick()
        
        if(!NormalizePrice(sl,sl)){Print("Failed to Normalize sl"); return;}
        if(!NormalizePrice(tp,tp)){Print("Failed to Normalize tp"); return;}
+       
+       DrawObject(1, iHigh(_Symbol,PERIOD_CURRENT,1),true,"Bullish");
+      
+       
        trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLotSize,currentTick.ask,sl,tp,"Candle stick Pattern Buy");
        
       }
     //check condition to open sell position
-    if(cntSell==0 && CheckAllConditions(false))
+    if(cntSell==0 && CheckAllConditions(false)&& CheckMAFilter(false))
       {
        //calculate stoploss and Take profit
        double sl=InpStopLoss==0?0:currentTick.ask+InpStopLoss*_Point;
@@ -134,6 +189,9 @@ void OnTick()
        
        if(!NormalizePrice(sl,sl)){Print("Failed to Normalize sl"); return;}
        if(!NormalizePrice(tp,tp)){Print("Failed to Normalize tp"); return;}
+       
+       DrawObject(1, iHigh(_Symbol,PERIOD_CURRENT,1),false,"Bearish");
+       
        trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLotSize,currentTick.bid,sl,tp,"Candle stick Pattern Sell");
       }  
    
@@ -162,6 +220,47 @@ void SetInputs()
   con[1].modeB =InpCon2ModeB;
   con[1].idxB =InpCon2IndexB;
   con[1].value =InpCon2Value;
+  
+  
+  //condition 3
+  con[2].active=InpCon3Active;
+  con[2].modeA =InpCon3ModeA;
+  con[2].idxA =InpCon3IndexA;
+  con[2].comp =InpCon3compare;
+  con[2].modeB =InpCon3ModeB;
+  con[2].idxB =InpCon3IndexB;
+  con[2].value =InpCon3Value;
+  
+  
+  //condition 4
+  con[3].active=InpCon4Active;
+  con[3].modeA =InpCon4ModeA;
+  con[3].idxA =InpCon4IndexA;
+  con[3].comp =InpCon4compare;
+  con[3].modeB =InpCon4ModeB;
+  con[3].idxB =InpCon4IndexB;
+  con[3].value =InpCon4Value;
+  
+  //condition 5
+  con[4].active=InpCon5Active;
+  con[4].modeA =InpCon5ModeA;
+  con[4].idxA =InpCon5IndexA;
+  con[4].comp =InpCon5compare;
+  con[4].modeB =InpCon5ModeB;
+  con[4].idxB =InpCon5IndexB;
+  con[4].value =InpCon5Value;
+  
+  
+  //condition 6
+  con[5].active=InpCon6Active;
+  con[5].modeA =InpCon6ModeA;
+  con[5].idxA =InpCon6IndexA;
+  con[5].comp =InpCon6compare;
+  con[5].modeB =InpCon6ModeB;
+  con[5].idxB =InpCon6IndexB;
+  con[5].value =InpCon6Value;
+  
+  
 
 
 }
@@ -299,13 +398,15 @@ bool CheckOneCondition(bool buy_sell, int i)
   //set value to a and b
   double a=0;
   double b=0;
+  
   switch(con[i].modeA)
     {
      case OPEN :a=rates[con[i].idxA].open; break;
      case HIGH :a=buy_sell? rates[con[i].idxA].high:rates[con[i].idxA].low; break;
      case LOW :a=buy_sell? rates[con[i].idxA].low:rates[con[i].idxA].high; break;  
      case CLOSE :a=rates[con[i].idxA].close; break; 
-     case RANGE :a=(rates[con[i].idxA].high-rates[con[i].idxA].low)/_Point; break;
+     case RANGE :a=(rates[con[i].idxA].high-rates[con[i].idxA].low)/_Point; break;      
+                                               
      case BODY :a=MathAbs(rates[con[i].idxA].open-rates[con[i].idxA].close)/_Point; break; 
      case RATIO :a=MathAbs(rates[con[i].idxA].open-rates[con[i].idxA].close)/
                    (rates[con[i].idxA].high-rates[con[i].idxA].low); break;
@@ -315,11 +416,12 @@ bool CheckOneCondition(bool buy_sell, int i)
     }
     switch(con[i].modeB)
     {
-     case OPEN :b=rates[con[i].idxB].open; break;
+     case OPEN :b=rates[con[i].idxB].open;  break;
      case HIGH :b=buy_sell? rates[con[i].idxB].high:rates[con[i].idxB].low; break;
      case LOW :b=buy_sell? rates[con[i].idxB].low:rates[con[i].idxB].high; break;  
      case CLOSE :b=rates[con[i].idxB].close; break; 
      case RANGE :b=(rates[con[i].idxB].high-rates[con[i].idxB].low)/_Point; break;
+      
      case BODY :b=MathAbs(rates[con[i].idxB].open-rates[con[i].idxB].close)/_Point; break; 
      case RATIO :b=MathAbs(rates[con[i].idxB].open-rates[con[i].idxB].close)/
                    (rates[con[i].idxB].high-rates[con[i].idxB].low); break;
@@ -330,15 +432,57 @@ bool CheckOneCondition(bool buy_sell, int i)
     //compare values
     if(buy_sell || (!buy_sell && con[i].modeA>=4))
       {
-       if(con[i].comp==GREATER && a >b){return true;}
-       if(con[i].comp==LESS && a<b){return true;}
+       if(con[i].comp==GREATER && a >b){  return true;}
+       if(con[i].comp==LESS && a<b){  return true;}
          
       }else
          {
-       if(con[i].comp==GREATER && a <b){return true;}
-       if(con[i].comp==LESS && a>b){return true;}
+       if(con[i].comp==GREATER && a <b){  return true;}
+       if(con[i].comp==LESS && a>b){  return true;}
+         
          }
   
   
   return false;
+}
+
+//check MA
+bool CheckMAFilter(bool buy_sell)
+{
+   //if ma is inactive
+   if(!InpMaActive){return true;}
+   
+   double maBuffer[];
+   int copied=CopyBuffer(handleMA,0,1,1,maBuffer);
+   if(copied!=1){Print("unable to get MA value"); return false;}
+   ArraySetAsSeries(maBuffer,true);
+   if(buy_sell && currentTick.ask>maBuffer[0]){Print("we are in Uptrend"); return true;}
+   if(!buy_sell && currentTick.bid<maBuffer[0]){Print("we are in DownTrend"); return true;}
+    
+
+  return false;
+}
+
+
+void DrawObject(int candleIndex, double highPrice ,bool buy_sell, string type)
+{
+  // Create a unique object name (avoid conflicts)
+   string objName = "HighText_" + TimeToString(iTime(_Symbol, _Period, candleIndex));
+
+   // Create the text object
+   if(!ObjectCreate(0, objName, OBJ_TEXT, 0, iTime(_Symbol, _Period, candleIndex), highPrice))
+   {
+      Print("Failed to create text object: ", GetLastError());
+      return;
+   }
+
+   // Set text properties
+   ObjectSetString(0, objName, OBJPROP_TEXT,type+" "+InpNameofpattern);
+   ObjectSetInteger(0, objName, OBJPROP_COLOR, buy_sell?clrBlue:clrRed);
+   ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, 10);
+
+   // Shift it slightly above the high
+   double shift = (highPrice * 0.001); // adjust for your symbol
+   ObjectMove(0, objName, 0, iTime(_Symbol, _Period, candleIndex), highPrice + shift);
+
 }
