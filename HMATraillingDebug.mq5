@@ -1,6 +1,8 @@
 #property copyright "Copyright 2024, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
 #property version   "1.00"
+
+#resource "\\Files\\nikoon.wav"
 #include<Trade/Trade.mqh>
 CTrade trade;
 //+------------------------------------------------------------------+
@@ -92,6 +94,7 @@ void OnTick()
             tp=NormalizeDouble(tp,_Digits);
             double lots=CalculateLotSize(PercentRisk,entry-sl);
             trade.Buy(lots,_Symbol,entry,sl,tp,"HMA Buy");
+            PlaySound("::Files\\nikoon.wav");
           }
         if(hmabuffer[0]<hmabuffer[1] && hmabuffer[1] > hmabuffer[2] )
           {
@@ -106,6 +109,7 @@ void OnTick()
             tp=NormalizeDouble(tp,_Digits);
             double lots=CalculateLotSize(PercentRisk,sl-entry);
             trade.Sell(lots,_Symbol,entry,sl,tp,"HMA Sell");
+            PlaySound("::Files\\nikoon.wav");
           }
           if(InpTrailingStop)
            {
