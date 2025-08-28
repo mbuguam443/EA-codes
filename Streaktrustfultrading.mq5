@@ -259,7 +259,7 @@ void DrawObjects()
   string streakclose = "streak_close_" + IntegerToString(GetTickCount());
   if(InpTimeFrame >0)
     {
-      ObjectCreate(NULL,streakclose,OBJ_VLINE,0,InpTimeFrame*60,0);
+      ObjectCreate(NULL,streakclose,OBJ_VLINE,0,InpTimeExit,0);
       ObjectSetString(NULL,streakclose,OBJPROP_TOOLTIP,"close of the range \n"+TimeToString(InpTimeFrame*60,TIME_DATE|TIME_MINUTES));
       ObjectSetInteger(NULL,streakclose,OBJPROP_COLOR,clrRed);
       ObjectSetInteger(NULL,streakclose,OBJPROP_WIDTH,2);
