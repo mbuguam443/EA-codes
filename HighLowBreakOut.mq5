@@ -1,280 +1,326 @@
-#property copyright "Copyright 2025, MetaQuotes Ltd."
+#property copyright "Copyright 2024, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
 #property version   "1.00"
+
 //+------------------------------------------------------------------+
 //|includes                                                          |
 //+------------------------------------------------------------------+
 #include <Trade/Trade.mqh>
 //+------------------------------------------------------------------+
-//|Inputs                                                                  |
+//|inputs                                                            |
 //+------------------------------------------------------------------+
-static input long InpMagicnumber=87654;      //magic number
-static double InpLots=0.01;                  //Lot size
-input  int    InpBars=20;                    //bars for high/low (0=off)
-input  int    InpIndexFilter=10;               // Index Filter in % (0=off)
-input  int    InpStopLoss=200;               //Stoploss in points (0=off)
-input  int    InpTakeProfit=0;               //Take Profit in points (0=off)
+static input long       InpMagicNumber=988998;// Magic Number
+static input double     InpLots=0.01; // LotSize
+input  int              InpBars=20;   // bars for High/Low  
+input  int              InpStopLoss=200;  // Stop Loss in Points 
+input  int              InpTakeProfit=0;  // Take Profit in Points (0==off)
+input  int              InpIndexFilter=10; // Index Filer % (0==off)
+input  int              InpSizeFilter=50; //The height of the range
+input  bool             InpTrailingStop=true; // Tailing Stop Loss
+
 //+------------------------------------------------------------------+
 //|Global Variables                                                  |
 //+------------------------------------------------------------------+
-double high=0,low=0;   //higest and low price of the N bars
-int highIdx=0;   //index of highest bar
-int lowIdx=0;    //index of lowest bar
-MqlTick currentTick,previousTick;
+double high=0; // Highest Price of the last N bars
+double low=0;  //Lowest Price of the Last N bars
+int highIdx=0; // index of the Highest bar
+int lowIdx=0;  // index of the Lowest bar
+MqlTick currentTick, previousTick;
 CTrade trade;
 
-//+------------------------------------------------------------------+
-//| Expert initialization function                                   |
-//+------------------------------------------------------------------+
+
 int OnInit()
   {
-   //check user Inputs
-   if(!CheckInputs()){return INIT_PARAMETERS_INCORRECT;}
-   trade.SetExpertMagicNumber(InpMagicnumber);
+   //check for userInputs
+   //if(!CheckInputs()){ return INIT_PARAMETERS_INCORRECT; }
+   trade.SetExpertMagicNumber(InpMagicNumber);
    return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
 //| Expert deinitialization function                                 |
 //+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-  {
-
-   
-  }
+void OnDeinit(const int reason){
+  ObjectDelete(NULL,"high");
+  ObjectDelete(NULL,"low");
+  ObjectDelete(NULL,"text");
+  ObjectDelete(NULL,"indexFilter");
+}
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
 void OnTick()
   {
-    //check for new bar open tick
-    if(!IsNewBar()){return;}
-    //get tick
-    previousTick=currentTick;
-    if(!SymbolInfoTick(_Symbol,currentTick)){Print("Failed to get current tick"); return;}
-    //count open position
-    int cntBuy=0,cntSell=0;
-    if(!CountOpenPositions(cntBuy,cntSell)){return;}
-    //check for buy position
-    if(cntBuy==0 && high!=0 && previousTick.ask<high && currentTick.ask>=high && CheckIndexFilter(highIdx))
-      {
-       Print("Open Buy Position");
-       //calculate stop loss / Take profit
-       double sl=InpStopLoss==0?0:currentTick.bid-InpStopLoss*_Point;
-       double tp=InpTakeProfit==0?0:currentTick.bid+InpTakeProfit*_Point;
-       if(!NormalizePrice(sl)){ Print("Sl failed to normalize");return;}
-       if(!NormalizePrice(tp)){ Print("tp failed to normalize");return;}
-       trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLots,currentTick.ask,sl,tp,"HighLow Buy");
-      }
-    //check for Sell position
-    if(cntSell==0 && low!=0 && previousTick.bid>low && currentTick.bid<=low && CheckIndexFilter(lowIdx))
-      {
-       Print("Open sell Position");
-       //calculate stop loss / Take profit
-       double sl=InpStopLoss==0?0:currentTick.ask+InpStopLoss*_Point;
-       double tp=InpTakeProfit==0?0:currentTick.ask-InpTakeProfit*_Point;
-       if(!NormalizePrice(sl)){ Print("Sl failed to normalize");return;}
-       if(!NormalizePrice(tp)){ Print("tp failed to normalize");return;}
-       trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLots,currentTick.bid,sl,tp,"HighLow Sell");
-      }  
+  
+   //check for new Bar
+   if(!IsNewBar()){return;} 
+  
+   //get Current Tick
+   previousTick=currentTick;
+   if(!SymbolInfoTick(_Symbol,currentTick)){Print("Failed to get current Tick"); return;}
    
-   //calculate high
+   //count buy and sell position
+   
+   int cntBuy=0,cntSell=0;
+   if(!Countpositions(cntBuy,cntSell)){return;}
+   
+   //check for buy Signal
+   if(cntBuy==0 && high!=0 && previousTick.ask <high && currentTick.ask>=high && CheckIndexFilter(highIdx) && CheckSizeFilter())
+   {
+      Print("Open Buy Position");
+      //calculate StopLoss
+      double sl=InpStopLoss==0?0:currentTick.bid-InpStopLoss*_Point;
+      double tp=InpTakeProfit==0?0:currentTick.bid+InpTakeProfit*_Point;
+      if(!NormalizePrice(sl)){return;}
+      if(!NormalizePrice(tp)){return;}
+      trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLots,currentTick.ask,sl,tp,"HighLow Buy");
+   }
+   
+   if(cntSell==0 && low!=0 && previousTick.bid >low && currentTick.bid<=low  && CheckIndexFilter(lowIdx) && CheckSizeFilter())
+   {
+      Print("Open Sell Position");
+      
+      double sl=InpStopLoss==0?0:currentTick.ask+InpStopLoss*_Point;
+      double tp=InpTakeProfit==0?0:currentTick.ask-InpTakeProfit*_Point;
+      if(!NormalizePrice(sl)){return;}
+      if(!NormalizePrice(tp)){return;}
+      trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLots,currentTick.bid,sl,tp,"HighLow Sell");
+   }
+   
+   if(InpTrailingStop && InpStopLoss>0)
+     {
+       UpdateStopLoss(InpStopLoss);
+     }
+   
+   //calculate High and Low
    highIdx=iHighest(_Symbol,PERIOD_CURRENT,MODE_HIGH,InpBars,1);
    high=iHigh(_Symbol,PERIOD_CURRENT,highIdx);
-   //calculate low
    lowIdx=iLowest(_Symbol,PERIOD_CURRENT,MODE_LOW,InpBars,1);
    low=iLow(_Symbol,PERIOD_CURRENT,lowIdx);
-   
-   //Print("high: ",high," low: ",low);
-   if(cntBuy==0 || cntSell==0)
-     {
-       DrawObjects();
-     }
-  
-   
+   DrawObjects();
   }
 //+------------------------------------------------------------------+
-//| Custom Functions                                                 |
+//|Custom Funtions                                                    |
 //+------------------------------------------------------------------+
-
+//check User Inputs
 bool CheckInputs()
 {
-
-  if(InpMagicnumber<=0)
+  if(InpMagicNumber<=0)
     {
-     Alert("Wrong Input:Magicnumber<=0 ");
-     return false;
+      Alert("Wrong Input:MagicNumber  <=0");
+      return false;
     }
-  if(InpLots<=0)
+    if(InpLots<=0)
     {
-     Alert("Wrong Input:Lots<=0 ");
-     return false;
-    } 
-   if(InpBars<0)
-    {
-     Alert("Wrong Input:Bars<0 ");
-     return false;
+      Alert("Wrong Input:Lots <=0");
+      return false;
     }
-    if(InpIndexFilter<0 || InpIndexFilter >=50)
+    if(InpBars<=0)
     {
-     Alert("Wrong Input:IndexFilter<0 || InpIndexFilter >=50 ");
-     return false;
+      Alert("Wrong Input:Bars <=0");
+      return false;
     }
-    if(InpStopLoss<0)
+    if(InpStopLoss<=0)
     {
-     Alert("Wrong Input:StopLoss<0 ");
-     return false;
+      Alert("Wrong Input:StopLoss <=0");
+      return false;
     }
-    if(InpTakeProfit<0)
+    if(InpTakeProfit<=0)
     {
-     Alert("Wrong Input:StopLoss<0 ");
-     return false;
-    }   
-
+      Alert("Wrong Input:TakeProfit <=0");
+      return false;
+    }
+    
   return true;
 }
-//check if we have a bar open tick
+
+//DrawObject
+void DrawObjects()
+{
+    string trendlineName = "high"; // Name of the trendline
+    datetime time1 = iTime(NULL, 0, InpBars); // Start time for the trendline
+    double price1 = high; // Start price for the trendline
+    datetime time2 = iTime(NULL, 0, 1);  // End time for the trendline
+    double price2 = high;  // End price for the trendline
+
+    // Create the High trendline object
+    if (ObjectCreate(0, trendlineName, OBJ_TREND, 0, time1, price1, time2, price2))
+    {
+        // Set line color
+        ObjectSetInteger(0, trendlineName, OBJPROP_COLOR,CheckIndexFilter(highIdx) && CheckSizeFilter()?clrBlue:clrBeige);
+
+        // Set line width
+        ObjectSetInteger(0, trendlineName, OBJPROP_WIDTH, 2);
+
+        // Set style
+        ObjectSetInteger(0, trendlineName, OBJPROP_STYLE, STYLE_SOLID);
+
+        //Print("Trendline created successfully!");
+    }
+    else
+    {
+        Print("Failed to create trendline.");
+    }
+    
+    string trendlineName1 = "low"; // Name of the trendline
+    double price3 = low; // Start price for the trendline
+    
+    // Create the Low trendline object
+    if (ObjectCreate(0, trendlineName1, OBJ_TREND, 0, time1, price3, time2, price3))
+    {
+        // Set line color
+        ObjectSetInteger(0, trendlineName1, OBJPROP_COLOR, CheckIndexFilter(lowIdx)&& CheckSizeFilter()?clrBlue:clrBeige);
+
+        // Set line width
+        ObjectSetInteger(0, trendlineName1, OBJPROP_WIDTH, 2);
+
+        // Set style
+        ObjectSetInteger(0, trendlineName1, OBJPROP_STYLE, STYLE_SOLID);
+
+        //Print("Trendline created successfully!");
+    }
+    else
+    {
+        Print("Failed to create trendline.");
+    }
+}
+
+bool CheckIndexFilter(int index)
+{                                 //right                                     //left         
+  if(InpIndexFilter>0 && (index<=round(InpBars*InpIndexFilter*0.01) || index >InpBars-round(InpBars*InpIndexFilter*0.01)))
+    {
+      Print("Index:",index,"calculated right: ",round(InpBars*InpIndexFilter*0.01)," Left: ",InpBars-round(InpBars*InpIndexFilter*0.01));
+      return false;
+    }
+   return true;
+}
+
+//Normalize Price Function
+bool NormalizePrice(double &price)
+{
+  double tickSize=0;
+  if(!SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE,tickSize))
+    {
+     Print("Failed to get Tick Size");
+     return false;
+    }
+    price=NormalizeDouble(MathRound(price/tickSize)*tickSize,_Digits);
+    return true;
+}
+
+
+bool Countpositions(int &cntBuy,int &cntSell)
+{
+    cntBuy=0;
+    cntSell=0;
+    
+    int total=PositionsTotal()-1;
+    
+    for(int i=total;i>=0;i--)
+      {
+         ulong ticket=PositionGetTicket(i);
+         ulong MagicNo=PositionGetInteger(POSITION_MAGIC);
+         if(PositionSelectByTicket(ticket))
+           {
+              if(MagicNo==InpMagicNumber)
+                {
+                  if(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY){ cntBuy++;}
+                  if(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_SELL){ cntSell++;}
+                }
+           }
+      }
+      
+      return true;
+}
+
+void ClosePosition(int buy_sell)
+{
+       
+    int total=PositionsTotal()-1;
+    
+    for(int i=total;i>=0;i--)
+      {
+         ulong ticket=PositionGetTicket(i);
+         ulong MagicNo=PositionGetInteger(POSITION_MAGIC);
+         if(PositionSelectByTicket(ticket))
+           {
+              if(MagicNo==InpMagicNumber)
+                {
+                  if(!buy_sell && PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY){ continue;}
+                  if(buy_sell && PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_SELL){ continue;}
+                  trade.PositionClose(ticket);
+                }
+           }
+      }
+      
+      //return true;
+}  
+
+//New bar
 bool IsNewBar()
 {
    static datetime previousTime=0;
    datetime currentTime=iTime(_Symbol,PERIOD_CURRENT,0);
    if(previousTime!=currentTime)
      {
-       previousTime=currentTime;
-       return true;
+      previousTime=currentTime;
+      return true;
      }
-   
    return false;
 }
-//count open Positions
-bool CountOpenPositions(int &cntBuy, int &cntSell)
-{
-  cntBuy=0;
-  cntSell=0;
-  
-  int total=PositionsTotal();
-  for(int i=total-1;i>=0;i--)
-    {
-     ulong positionTicket = PositionGetTicket(i);
-     if(positionTicket<=0){Print("Failed to get Position Ticket"); return false;}
-     if(!PositionSelectByTicket(positionTicket)){Print("Failed to select position"); return false;}
-     long magicnumber;
-     if(!PositionGetInteger(POSITION_MAGIC,magicnumber)){Print("failed to get Position magic number"); return false;}
-     
-     if(magicnumber==InpMagicnumber)
-       {
-          long type;
-          if(!PositionGetInteger(POSITION_TYPE,type)){Print("failed to get Position Type number"); return false;}
-          if(type==POSITION_TYPE_BUY){cntBuy++;}
-          if(type==POSITION_TYPE_SELL){cntSell++;}
-       }
-    }
-  return true;
-}
 
-bool NormalizePrice(double &price)
+//Check Size Filter
+bool CheckSizeFilter()
 {
-  double tickSize=0;
-  if(!SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE,tickSize)){Print("Failed to get tick size"); return false;}
-  price=NormalizeDouble(MathRound(price/tickSize)*tickSize,_Digits);
-  return true;
-}
-
-
-//Close open Positions
-bool ClosePositions(int all_buy_sell)
-{
-  
-  
-  int total=PositionsTotal();
-  for(int i=total-1;i>=0;i--)
-    {
-     ulong positionTicket = PositionGetTicket(i);
-     if(positionTicket<=0){Print("Failed to get Position Ticket"); return false;}
-     if(!PositionSelectByTicket(positionTicket)){Print("Failed to select position"); return false;}
-     long magicnumber;
-     if(!PositionGetInteger(POSITION_MAGIC,magicnumber)){Print("failed to get Position magic number"); return false;}
-     
-     if(magicnumber==InpMagicnumber)
-       {
-          long type;
-          if(!PositionGetInteger(POSITION_TYPE,type)){Print("failed to get Position Type number"); return false;}
-          if(all_buy_sell==1 && type==POSITION_TYPE_SELL){continue;}
-          if(all_buy_sell==2 && type==POSITION_TYPE_BUY){continue;}
-           trade.PositionClose(positionTicket);
-          if(trade.ResultRetcode()!=TRADE_RETCODE_DONE)
-            {
-             Print("Failed to Close the Position ticket: "+(string)positionTicket," result: "+(string)trade.ResultRetcode(),": ",trade.ResultRetcodeDescription());
-            } 
-       }
-    }
-  return true;
-}
-
-void DrawObjects()
-{
-    datetime time1=iTime(_Symbol,PERIOD_CURRENT,InpBars);
-    datetime time2=iTime(_Symbol,PERIOD_CURRENT,InpBars-round(InpBars*InpIndexFilter*0.01));
-    datetime time3=iTime(_Symbol,PERIOD_CURRENT,round(InpBars*InpIndexFilter*0.01));
-    datetime time4=iTime(_Symbol,PERIOD_CURRENT,1);
-    
-   if(InpIndexFilter>0){ 
-    ObjectDelete(NULL,"high_");
-    //high time1
-    string highname = "high_" + TimeToString(time1);
-    ObjectCreate(NULL,highname,OBJ_TREND,0,time1,high,time2,high);
-    ObjectSetInteger(NULL,highname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,highname,OBJPROP_COLOR,clrGreen);
-    //high time2
-     highname = "high_" + TimeToString(time2);
-    ObjectCreate(NULL,highname,OBJ_TREND,0,time2,high,time3,high);
-    ObjectSetInteger(NULL,highname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,highname,OBJPROP_COLOR,clrBeige);
-    //high time3
-     highname = "high_" + TimeToString(time3);
-    ObjectCreate(NULL,highname,OBJ_TREND,0,time3,high,time4,high);
-    ObjectSetInteger(NULL,highname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,highname,OBJPROP_COLOR,clrBlue);
-    ObjectDelete(NULL,"low_");
-    //low time1
-    string lowname = "low_" + TimeToString(time1);
-    ObjectCreate(NULL,lowname,OBJ_TREND,0,time1,low,time2,low);
-    ObjectSetInteger(NULL,lowname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,lowname,OBJPROP_COLOR,clrGreen);
-    //low time1
-     lowname = "low_" + TimeToString(time2);
-    ObjectCreate(NULL,lowname,OBJ_TREND,0,time2,low,time3,low);
-    ObjectSetInteger(NULL,lowname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,lowname,OBJPROP_COLOR,clrBeige);
-    //low time1
-     lowname = "low_" + TimeToString(time3);
-    ObjectCreate(NULL,lowname,OBJ_TREND,0,time3,low,time4,low);
-    ObjectSetInteger(NULL,lowname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,lowname,OBJPROP_COLOR,clrBlue);
-    //low time1
-    }else{
-    ObjectDelete(NULL,"high_");
-    //high time1
-    string highname = "high_" + TimeToString(time1);
-    ObjectCreate(NULL,highname,OBJ_TREND,0,time1,high,time4,high);
-    ObjectSetInteger(NULL,highname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,highname,OBJPROP_COLOR,clrGreen);
-    //low time1
-    ObjectDelete(NULL,"low_");
-     string lowname = "low_" + TimeToString(time3);
-    ObjectCreate(NULL,lowname,OBJ_TREND,0,time1,low,time4,low);
-    ObjectSetInteger(NULL,lowname,OBJPROP_WIDTH,3);
-    ObjectSetInteger(NULL,lowname,OBJPROP_COLOR,clrBlue);
-    }
-    
-    
-    
-}
-//check if high/low
-bool CheckIndexFilter(int index)
-{
-   if(InpIndexFilter>0 && (index<=round(InpBars*InpIndexFilter*0.01) || index >InpBars-round(InpBars*InpIndexFilter*0.01)))
+   if(InpSizeFilter>0 && (high-low)>InpSizeFilter*_Point)
      {
-      return false;
+       Print("Rejected Size: ",(string)(high-low)," InpFil: ",InpSizeFilter*_Point);
+       return false;
      }
-   return true;
+     
+     return true;
+}
+
+void UpdateStopLoss(int slDistance)
+{
+   int total=PositionsTotal();
+   for(int i=total-1;i>=0;i--)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket<=0){Print("Failed to get Position Ticket"); return;}
+      if(!PositionSelectByTicket(ticket)){Print("Failed to select the ticket");return;}
+      long magicnumber;
+      if(!PositionGetInteger(POSITION_MAGIC,magicnumber)){Print("Failed to get Position Magic Number");return;}
+      if(magicnumber==InpMagicNumber)
+        {
+         long type;
+         if(!PositionGetInteger(POSITION_TYPE,type)){Print("Failed to get Position Type");return;}
+         
+         double currentSL,currentTP;
+         if(!PositionGetDouble(POSITION_SL,currentSL)){Print("Failed to get current Position Stop Loss");return;}
+         if(!PositionGetDouble(POSITION_TP,currentTP)){Print("Failed to get current Position Take Profit");return;}
+         
+         
+         double currentPrice=type==POSITION_TYPE_BUY?currentTick.bid :currentTick.ask;
+         int n = type==POSITION_TYPE_BUY?1:-1;
+         double newSL=currentPrice-slDistance*n*_Point;
+         if(!NormalizePrice(newSL)){return;}
+         
+         if((newSL*n)<(currentSL*n) || NormalizeDouble(MathAbs(newSL-currentSL),_Digits)<_Point)
+           {
+             continue;
+           }
+         long level=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+         if(level!=0 && MathAbs(currentPrice-newSL)<=level*_Point)
+           {
+            Print("New Stop Loss inside Stop  Level");
+            continue;
+           } 
+         if(!trade.PositionModify(ticket,newSL,currentTP))
+           {
+             Print("Failed to Modify new Sl ",ticket);
+             return;
+           }   
+        }
+     }
+
 }
