@@ -171,7 +171,7 @@ void OnTick()
           double lots;
           if(!CalculateLots(cT.ask-sl,lots)){return;}
           
-          if(slowBuffer[1] < slowBuffer[0])
+          //if(slowBuffer[1] < slowBuffer[0])
         {
           trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,lots,cT.ask,sl,tp,"Stocastic Buy");
         }
@@ -189,7 +189,7 @@ void OnTick()
      //calculate lots
           double lots;
           if(!CalculateLots(sl-cT.bid,lots)){return;}
-          if(slowBuffer[1] > slowBuffer[0])
+          //if(slowBuffer[1] > slowBuffer[0])
         {
            trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,lots,cT.bid,sl,tp,"Stocastic Sell");
         }

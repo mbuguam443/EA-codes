@@ -15,7 +15,14 @@ input group "Trade Setting"
 static input ulong InpMagicNumber=3763342;
 input double LowestRiskAmount=3.0;
 
-input double RiskPercentage=2.0;
+enum LOT_MODE_ENUM{
+  LOT_MODE_FIXED,  // fixed lots
+  LOT_MODE_MONEY,  //lot based on money
+  LOT_MODE_PCT_ACCOUNT //lots based on percent of account (lot must be %)
+};
+input LOT_MODE_ENUM InpLotMode=LOT_MODE_PCT_ACCOUNT; //lot mode
+
+input double InpLots=0.01;       //lots / money/ %
 input int SlPoints=200;
 input int TpPoint=600;
 
@@ -110,6 +117,7 @@ void OnTick()
           {
             ulong posTicket=PositionGetTicket(i);
             trade.PositionClose(posTicket);
+            Print("Certain target reached: DailyProfitTarget: ",DailyProfitTarget," DailyLossStop: ",DailyLossStop);
           }
       } 
   
@@ -162,7 +170,9 @@ void OnTick()
               tp=NormalizeDouble(tp,_Digits);
               
               Print("get back slDistance: ",(entry-sl));
-              double lots=CalculateLotSize(RiskPercentage,(entry-sl));
+              //calculate lots
+                double lots;
+                if(!CalculateLots(entry-sl,lots)){return;}
               if(profitDay >DailyProfitTarget || profitDay <DailyLossStop)
               {
                Print("Buy cannot Safeguard account");
@@ -207,7 +217,9 @@ void OnTick()
               tp=NormalizeDouble(tp,_Digits);
               sl=NormalizeDouble(sl,_Digits);
               Print("get back slDistance: ",(sl-entry));
-              double lots=CalculateLotSize(RiskPercentage,(sl-entry));
+              //calculate lots
+             double lots;
+             if(!CalculateLots(sl-entry,lots)){return;}
               
               if(profitDay >DailyProfitTarget || profitDay <DailyLossStop)
               {
@@ -281,44 +293,56 @@ void ClosePosition(int buy_sell)
            }
       }
 }
-double CalculateLotSize(double Percent,double slDistance)
+//calculate lots
+
+bool CalculateLots(double slDistance, double &lots)
 {
-   double tickSize= SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-   double tickValue= SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
-   double ticklotStep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
-   double ticklotMin=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
-   double ticklotMax=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
-   
-   Print("tickSize: ",tickSize," tickValue: ",tickValue," tickLotStep: ",ticklotStep," tickMin: ",ticklotMin," tickmax: ",ticklotMax);
-   
-   if(tickSize==0 || tickValue==0 || ticklotStep==0 )
-     {
-       return 0;
-     }
+  lots=0.0;
+  
+  if(InpLotMode==LOT_MODE_FIXED)
+    {
+     lots=InpLots;
+    }else
+    {
+     double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+     double tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+     double volumestep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
      
-   double riskMoney= AccountInfoDouble(ACCOUNT_EQUITY)*Percent/100;
-   
-   
-   double moneyPerSmallestLotsize= (slDistance/tickSize)*tickValue*ticklotStep;
-   Print("SlDisatnce: ",DoubleToString(slDistance, 2),"Total tickSize for Distance: ",DoubleToString(slDistance/tickSize, 2)," riskMoney: ",DoubleToString(riskMoney, 2)," smallest you can riskMoney: ",moneyPerSmallestLotsize);
-   if(moneyPerSmallestLotsize==0)
-     {
-      return 0;
-     }
-   double lotsFactor= (riskMoney/moneyPerSmallestLotsize);  
-   double lots= MathFloor(riskMoney/moneyPerSmallestLotsize)* ticklotStep;
-   if(moneyPerSmallestLotsize >riskMoney)
-     {
-      lots=ticklotMin;
-     }
-   if(lots > ticklotMax)
-     {
-      lots=ticklotMax;
-     }  
-   Print("The Lot Factor between the two is: ",lotsFactor);
-   Print("The Lots size to be used: ",lots);
-   return lots; 
+     double riskMoney=InpLotMode==LOT_MODE_MONEY?InpLots:AccountInfoDouble(ACCOUNT_EQUITY)*InpLots*0.01;
+     double moneyVolumeStep=(slDistance/tickSize)*tickValue*volumestep;
+     
+     lots=MathFloor(riskMoney/moneyVolumeStep)*volumestep;
+        
+    }
+    Print("Calculated  lots: ",lots);
+    //check calculated lots
+    if(!CheckLots(lots)){return false;}
     
+  return true;
+}
+
+
+//check lots
+bool CheckLots(double &lots)
+{
+  double min=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+  double max=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+  double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+  
+  if(lots<min)
+    {
+     Print("Lotsize will be set to minimum lot value lots: ",lots);
+     lots=min;
+    }
+    if(lots>max)
+    {
+     Print("Lotsize will be set to maximum lot value, lots: ",lots);
+     lots=max;
+    }
+    
+    lots=(int)MathFloor(lots/step)*step;
+    Print("Calculated check lots: ",lots," max | min :",max," ",min);
+  return true;
 }
 
 void trailing(int buy_sell)
