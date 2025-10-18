@@ -116,6 +116,46 @@ void OnTick()
    int cntBuy, cntSell;
    CountOpenPositions(cntBuy,cntSell);
    
+   //check for a new buy position
+   if(cntBuy==0 && tick.ask<= MA-ATR*InpTriggerLv1)
+     {
+     //close a sell trade
+      if(InpCloseBySignal){ClosePositions(false);}
+        
+         //calculate sl and tp
+         double sl=InpStopLossATR==0?0:tick.bid-ATR*InpStopLossATR;
+         double tp=InpTPMode==TP_MODE_MA?0:InpTakeProfitATR==0?0:tick.ask+ATR*InpTakeProfitATR;
+         //normalize
+         if(!NormalizePrice(sl,sl)){return;}
+         if(!NormalizePrice(tp,tp)){return;}
+         trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLotsize,tick.ask,sl,tp,"MA pullback Buy");
+         
+        
+     }
+     
+    //check for a new sell position
+   if(cntSell==0 && tick.bid>= MA+ATR*InpTriggerLv1)
+     {
+     //close a sell trade
+      if(InpCloseBySignal){ClosePositions(true);}
+        
+         //calculate sl and tp
+         double sl=InpStopLossATR==0?0:tick.bid+ATR*InpStopLossATR;
+         double tp=InpTPMode==TP_MODE_MA?0:InpTakeProfitATR==0?0:tick.ask-ATR*InpTakeProfitATR;
+         //normalize
+         if(!NormalizePrice(sl,sl)){return;}
+         if(!NormalizePrice(tp,tp)){return;}
+         trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLotsize,tick.bid,sl,tp,"MA pullback Sell");
+         
+        
+     } 
+     
+     
+   //check buy position take profit at MA
+   if(cntBuy >0 && InpTPMode==TP_MODE_MA && tick.bid>=MA){ClosePositions(true);}
+   //check sell position take profit at MA
+   if(cntSell >0 && InpTPMode==TP_MODE_MA && tick.ask<=MA){ClosePositions(false);}       
+   
    
    DrawObjects(MA,ATR);
    
@@ -203,4 +243,43 @@ void DrawObjects(double maValue, double atrValue)
     ObjectDelete(NULL,"TriggerSell");
     ObjectCreate(NULL,"TriggerSell",OBJ_HLINE,0,0,maValue+atrValue*InpTriggerLv1);
     ObjectSetInteger(NULL,"TriggerSell",OBJPROP_COLOR,clrBlue);
+}
+
+bool NormalizePrice(double price, double &normalizeprice)
+{
+  double tickSize=0;
+  if(!SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE,tickSize)){Print("Failed to get tick size"); return false;}
+  normalizeprice=NormalizeDouble(MathRound(price/tickSize)*tickSize,_Digits);
+  return true;
+}
+
+
+//Close open Positions
+bool ClosePositions(int all_buy_sell)
+{
+  
+  
+  int total=PositionsTotal();
+  for(int i=total-1;i>=0;i--)
+    {
+     ulong positionTicket = PositionGetTicket(i);
+     if(positionTicket<=0){Print("Failed to get Position Ticket"); return false;}
+     if(!PositionSelectByTicket(positionTicket)){Print("Failed to select position"); return false;}
+     long magicnumber;
+     if(!PositionGetInteger(POSITION_MAGIC,magicnumber)){Print("failed to get Position magic number"); return false;}
+     
+     if(magicnumber==InpMagicnumber)
+       {
+          long type;
+          if(!PositionGetInteger(POSITION_TYPE,type)){Print("failed to get Position Type number"); return false;}
+          if(all_buy_sell==1 && type==POSITION_TYPE_SELL){continue;}
+          if(all_buy_sell==2 && type==POSITION_TYPE_BUY){continue;}
+           trade.PositionClose(positionTicket);
+          if(trade.ResultRetcode()!=TRADE_RETCODE_DONE)
+            {
+             Print("Failed to Close the Position ticket: "+(string)positionTicket," result: "+(string)trade.ResultRetcode(),": ",trade.ResultRetcodeDescription());
+            } 
+       }
+    }
+  return true;
 }
