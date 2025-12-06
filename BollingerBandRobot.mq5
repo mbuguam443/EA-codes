@@ -14,7 +14,14 @@
 //| Inputs                                                           |
 //+------------------------------------------------------------------+
 static input long InpMagicNumber=87637; //magic number
-static input double InpLotSize =0.01;   //lot size
+enum LOT_MODE_ENUM{
+  LOT_MODE_FIXED,  // fixed lots
+  LOT_MODE_MONEY,  //lot based on money
+  LOT_MODE_PCT_ACCOUNT //lots based on percent of account (lot must be %)
+};
+input LOT_MODE_ENUM InpLotMode=LOT_MODE_PCT_ACCOUNT; //lot mode
+
+input double InpLots=3;       //lots / money/ %
 input  bool         InpCloseByMiddleline=false; //Close by Middle Line
 
 input int InpPeriod            =21;     //period
@@ -47,11 +54,7 @@ int OnInit()
       Alert("magicnumber <=0");
       return INIT_PARAMETERS_INCORRECT;
      }
-   if(InpLotSize<=0)
-     {
-      Alert("Lotsize <=0");
-      return INIT_PARAMETERS_INCORRECT;
-     }
+   
    if(InpPeriod<=1)
      {
       Alert("Period<=1");
@@ -126,7 +129,11 @@ void OnTick()
      if(!NormalizePrice(sl)){Print("Unable to normalize sl "); return;}
      if(!NormalizePrice(tp)){Print("Unable to normalize  tp"); return;}
      
-     trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLotSize,currentTick.ask,sl,tp,"BolingerBand Buy");
+     //calculate lots
+          double lots;
+          if(!CalculateLots(currentTick.bid-sl,lots)){return;}
+     
+     trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,lots,currentTick.ask,sl,tp,"BolingerBand Buy");
    
    }
    
@@ -138,8 +145,10 @@ void OnTick()
      double tp=InpTakeProfit==0?0:currentTick.ask-InpTakeProfit*_Point;
      if(!NormalizePrice(sl)){Print("Unable to normalize sl "); return;}
      if(!NormalizePrice(tp)){Print("Unable to normalize  tp"); return;}
-     
-     trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLotSize,currentTick.bid,sl,tp,"BolingerBand Sell");
+     //calculate lots
+          double lots;
+          if(!CalculateLots(sl-currentTick.ask,lots)){return;}
+     trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,lots,currentTick.bid,sl,tp,"BolingerBand Sell");
    
    }
    
@@ -230,5 +239,57 @@ bool ClosePositions(int all_buy_sell)
             } 
        }
     }
+  return true;
+}
+
+//calculate lots
+
+bool CalculateLots(double slDistance, double &lots)
+{
+  lots=0.0;
+  
+  if(InpLotMode==LOT_MODE_FIXED)
+    {
+     lots=InpLots;
+    }else
+    {
+     double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+     double tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+     double volumestep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+     
+     double riskMoney=InpLotMode==LOT_MODE_MONEY?InpLots:AccountInfoDouble(ACCOUNT_EQUITY)*InpLots*0.01;
+     double moneyVolumeStep=(slDistance/tickSize)*tickValue*volumestep;
+     
+     lots=MathFloor(riskMoney/moneyVolumeStep)*volumestep;
+        
+    }
+    Print("Calculated  lots: ",lots);
+    //check calculated lots
+    if(!CheckLots(lots)){return false;}
+    
+  return true;
+}
+
+
+//check lots
+bool CheckLots(double &lots)
+{
+  double min=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+  double max=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+  double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+  
+  if(lots<min)
+    {
+     Print("Lotsize will be set to minimum lot value lots: ",lots);
+     lots=min;
+    }
+    if(lots>max)
+    {
+     Print("Lotsize will be set to maximum lot value, lots: ",lots);
+     lots=max;
+    }
+    
+    lots=(int)MathFloor(lots/step)*step;
+    Print("Calculated check lots: ",lots," max | min :",max," ",min);
   return true;
 }

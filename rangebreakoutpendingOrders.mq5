@@ -9,6 +9,13 @@
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
+enum TRIGGER_MODE
+  {
+   ONE_SIDED=1,
+   TWO_SIDED=2
+  };
+
+input TRIGGER_MODE InpTriggerMode=ONE_SIDED;
 input double DailyProfitTarget=20; //Daily Profit Target in %
 input double DailyLossStop=-10; //Daily Stop in %
 
@@ -622,6 +629,32 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
        {
          profitClosed=CalculateDailyProfitClosed();
        }
+     // When a new deal is created
+    if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
+    {
+        ulong posTicket = trans.position;
+        
+        // Load the position to check magic number
+        if(PositionSelectByTicket(posTicket))
+        {
+            int posMagic = (int)PositionGetInteger(POSITION_MAGIC);
+
+            // Only react to THIS EA's position
+            if(posMagic == InpMagicNumber)
+            {
+                Print("My EA opened a position!");
+                if(InpTriggerMode==ONE_SIDED)
+                  {
+                    ClosePendingOrdersByMagic(InpMagicNumber);
+                  }
+                
+                // Now delete all pending orders from this EA
+               // DeleteMyPendingOrders();
+            }else{
+             Print("anthor guy open position");
+            }
+        }
+    }  
    
   }  
   
@@ -671,4 +704,54 @@ double CalculateDailyProfitClosed()
             
          }
    return profit;
+}
+
+
+
+
+
+void ClosePendingOrdersByMagic(int magicNumber)
+{
+   // iterate backwards so deleting doesn't break indexing
+   int total = OrdersTotal();
+   for(int i = total - 1; i >= 0; i--)
+   {
+       ulong ticket = OrderGetTicket(i); 
+      // select order by position from the pool of current (open & pending) orders
+      if(OrderSelect(ticket))
+      {
+         
+         int type = (int)OrderGetInteger(ORDER_TYPE);
+         int magic = (int)OrderGetInteger(ORDER_MAGIC);
+
+         // target pending order types only
+         if(type == ORDER_TYPE_BUY_LIMIT  ||
+            type == ORDER_TYPE_SELL_LIMIT ||
+            type == ORDER_TYPE_BUY_STOP   ||
+            type == ORDER_TYPE_SELL_STOP  ||
+            type == ORDER_TYPE_BUY_STOP_LIMIT ||
+            type == ORDER_TYPE_SELL_STOP_LIMIT)
+         {
+            if(magic == magicNumber)
+            {
+               Print("we are in here");
+               // attempt to delete/cancel the pending order
+               if(!trade.OrderDelete(ticket))
+               {
+                  PrintFormat("Failed to delete pending order #%I64u (magic=%d). Error=%d",
+                              ticket, magic, GetLastError());
+               }
+               else
+               {
+                  PrintFormat("Deleted pending order #%I64u (magic=%d).", ticket, magic);
+               }
+            }
+         }
+      }
+      else
+      {
+         // If OrderSelect fails, print error (helps debugging)
+         PrintFormat("OrderSelect(%d) failed, Error=%d", i, GetLastError());
+      }
+   }
 }

@@ -527,3 +527,29 @@ double CalculateDailyProfitClosed()
 
 }
 //2050448727
+
+
+
+bool Countpositions(int &cntBuy,int &cntSell)
+{
+    cntBuy=0;
+    cntSell=0;
+    
+    int total=PositionsTotal()-1;
+    
+    for(int i=total;i>=0;i--)
+      {
+         ulong ticket=PositionGetTicket(i);
+         ulong MagicNo=PositionGetInteger(POSITION_MAGIC);
+         if(PositionSelectByTicket(ticket))
+           {
+              if(MagicNo==InpMagicNumber)
+                {
+                  if(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY){ cntBuy++;}
+                  if(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_SELL){ cntSell++;}
+                }
+           }
+      }
+      
+      return true;
+}
