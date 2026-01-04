@@ -10,7 +10,14 @@
 //|inputs                                                            |
 //+------------------------------------------------------------------+
 static input long       InpMagicNumber=988998;// Magic Number
-static input double     InpLots=0.01; // LotSize
+enum LOT_MODE_ENUM{
+  LOT_MODE_FIXED,  // fixed lots
+  LOT_MODE_MONEY,  //lot based on money
+  LOT_MODE_PCT_ACCOUNT //lots based on percent of account (lot must be %)
+};
+input LOT_MODE_ENUM InpLotMode=LOT_MODE_PCT_ACCOUNT; //lot mode
+
+input double InpLots=0.01;       //lots / money/ %
 input  int              InpBars=20;   // bars for High/Low  
 input  int              InpStopLoss=200;  // Stop Loss in Points 
 input  int              InpTakeProfit=0;  // Take Profit in Points (0==off)
@@ -72,7 +79,9 @@ void OnTick()
       double tp=InpTakeProfit==0?0:currentTick.bid+InpTakeProfit*_Point;
       if(!NormalizePrice(sl)){return;}
       if(!NormalizePrice(tp)){return;}
-      trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,InpLots,currentTick.ask,sl,tp,"HighLow Buy");
+      double lots;
+      if(!CalculateLots(currentTick.ask-sl,lots)){return;}
+      trade.PositionOpen(_Symbol,ORDER_TYPE_BUY,lots,currentTick.ask,sl,tp,"HighLow Buy");
    }
    
    if(cntSell==0 && low!=0 && previousTick.bid >low && currentTick.bid<=low  && CheckIndexFilter(lowIdx) && CheckSizeFilter())
@@ -83,7 +92,9 @@ void OnTick()
       double tp=InpTakeProfit==0?0:currentTick.ask-InpTakeProfit*_Point;
       if(!NormalizePrice(sl)){return;}
       if(!NormalizePrice(tp)){return;}
-      trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,InpLots,currentTick.bid,sl,tp,"HighLow Sell");
+      double lots;
+      if(!CalculateLots(sl-currentTick.bid,lots)){return;}
+      trade.PositionOpen(_Symbol,ORDER_TYPE_SELL,lots,currentTick.bid,sl,tp,"HighLow Sell");
    }
    
    if(InpTrailingStop && InpStopLoss>0)
@@ -323,4 +334,58 @@ void UpdateStopLoss(int slDistance)
         }
      }
 
+}
+
+
+
+//calculate lots
+
+bool CalculateLots(double slDistance, double &lots)
+{
+  lots=0.0;
+  
+  if(InpLotMode==LOT_MODE_FIXED)
+    {
+     lots=InpLots;
+    }else
+    {
+     double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+     double tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+     double volumestep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+     
+     double riskMoney=InpLotMode==LOT_MODE_MONEY?InpLots:AccountInfoDouble(ACCOUNT_EQUITY)*InpLots*0.01;
+     double moneyVolumeStep=(slDistance/tickSize)*tickValue*volumestep;
+     
+     lots=MathFloor(riskMoney/moneyVolumeStep)*volumestep;
+        
+    }
+    Print("Calculated  lots: ",lots);
+    //check calculated lots
+    if(!CheckLots(lots)){return false;}
+    
+  return true;
+}
+
+
+//check lots
+bool CheckLots(double &lots)
+{
+  double min=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+  double max=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+  double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+  
+  if(lots<min)
+    {
+     Print("Lotsize will be set to minimum lot value lots: ",lots);
+     lots=min;
+    }
+    if(lots>max)
+    {
+     Print("Lotsize will be set to maximum lot value, lots: ",lots);
+     lots=max;
+    }
+    
+    lots=(int)MathFloor(lots/step)*step;
+    Print("Calculated check lots: ",lots," max | min :",max," ",min);
+  return true;
 }
