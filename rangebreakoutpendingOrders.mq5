@@ -14,7 +14,7 @@ enum TRIGGER_MODE
    ONE_SIDED=1,
    TWO_SIDED=2
   };
-
+input string url="https://fxaccountmanager.greatjourns.com/api.php";
 input TRIGGER_MODE InpTriggerMode=ONE_SIDED;
 input double DailyProfitTarget=20; //Daily Profit Target in %
 input double DailyLossStop=-10; //Daily Stop in %
@@ -82,7 +82,7 @@ CTrade trade;
 
 int OnInit()
   {
-  
+      EventSetTimer(5);
       if(!CheckInputs())
       {
           return INIT_PARAMETERS_INCORRECT;
@@ -106,9 +106,14 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-
+     EventKillTimer();
    
   }
+  void OnTimer()
+   {
+       InternetAuth();
+       
+   }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
@@ -656,7 +661,53 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
         }
     }  
    
-  }  
+  }
+
+void ClosePendingOrdersByMagic(int magicNumber)
+{
+   // iterate backwards so deleting doesn't break indexing
+   int total = OrdersTotal();
+   for(int i = total - 1; i >= 0; i--)
+   {
+       ulong ticket = OrderGetTicket(i); 
+      // select order by position from the pool of current (open & pending) orders
+      if(OrderSelect(ticket))
+      {
+         
+         int type = (int)OrderGetInteger(ORDER_TYPE);
+         int magic = (int)OrderGetInteger(ORDER_MAGIC);
+
+         // target pending order types only
+         if(type == ORDER_TYPE_BUY_LIMIT  ||
+            type == ORDER_TYPE_SELL_LIMIT ||
+            type == ORDER_TYPE_BUY_STOP   ||
+            type == ORDER_TYPE_SELL_STOP  ||
+            type == ORDER_TYPE_BUY_STOP_LIMIT ||
+            type == ORDER_TYPE_SELL_STOP_LIMIT)
+         {
+            if(magic == magicNumber)
+            {
+               Print("we are in here");
+               // attempt to delete/cancel the pending order
+               if(!trade.OrderDelete(ticket))
+               {
+                  PrintFormat("Failed to delete pending order #%I64u (magic=%d). Error=%d",
+                              ticket, magic, GetLastError());
+               }
+               else
+               {
+                  PrintFormat("Deleted pending order #%I64u (magic=%d).", ticket, magic);
+               }
+            }
+         }
+      }
+      else
+      {
+         // If OrderSelect fails, print error (helps debugging)
+         PrintFormat("OrderSelect(%d) failed, Error=%d", i, GetLastError());
+      }
+   }
+}  
   
   
 double CalculateDailyProfitClosed()
@@ -705,53 +756,116 @@ double CalculateDailyProfitClosed()
          }
    return profit;
 }
-
-
-
-
-
-void ClosePendingOrdersByMagic(int magicNumber)
+int InternetAuth()
 {
-   // iterate backwards so deleting doesn't break indexing
-   int total = OrdersTotal();
-   for(int i = total - 1; i >= 0; i--)
-   {
-       ulong ticket = OrderGetTicket(i); 
-      // select order by position from the pool of current (open & pending) orders
-      if(OrderSelect(ticket))
+   if(!MQLInfoInteger(MQL_TESTER) )
       {
+          char post[];
+          int accountNumber=9876; //AccountInfoInteger(ACCOUNT_LOGIN);
+          
+          string postText="{account_no="+IntegerToString(accountNumber)+"}";
+          //string postText = "{\"account_no\": 9876}";
+          StringToCharArray(postText, post, 0, StringLen(postText));  // Important: avoid null terminator
+          //StringToCharArray(postText,post,0,WHOLE_ARRAY,CP_UTF8);
+          char result[];
+          string resultHeaders;
+          
+          int response= WebRequest("POST",url,NULL,1000,post,result,resultHeaders);
+          Print("Server Response: ",response);
+          Print("Results: ",CharArrayToString(result));
+       
          
-         int type = (int)OrderGetInteger(ORDER_TYPE);
-         int magic = (int)OrderGetInteger(ORDER_MAGIC);
-
-         // target pending order types only
-         if(type == ORDER_TYPE_BUY_LIMIT  ||
-            type == ORDER_TYPE_SELL_LIMIT ||
-            type == ORDER_TYPE_BUY_STOP   ||
-            type == ORDER_TYPE_SELL_STOP  ||
-            type == ORDER_TYPE_BUY_STOP_LIMIT ||
-            type == ORDER_TYPE_SELL_STOP_LIMIT)
+        
+         
+           
+       if(response==200)
          {
-            if(magic == magicNumber)
+            Print("Response 200: ",response);
+            Print("Results 200: ",CharArrayToString(result));
+            
+            
+            
+         //{"accountno":1234,"symbol":"GPUSD.m","magicno":28374,"profit":30}   
+         string json = CharArrayToString(result);//"{\"success\":true,\"lotsize\":0.02,\"tp\":600,\"sl\":200}";
+         long  accountno = StringToInteger(GetJsonValue(json, "accountno"));
+         string symbol = GetJsonValue(json, "symbol");
+         long magicno = StringToInteger(GetJsonValue(json, "magicno"));
+         int profit = StringToInteger(GetJsonValue(json, "profit"));
+         int breakeven = StringToInteger(GetJsonValue(json, "breakeven"));
+         
+         Print("Extracted text=> accountno: ",accountno," symbol: ",symbol," magicno: ",magicno," profit:",profit);
+         
+         if((accountno==AccountInfoInteger(ACCOUNT_LOGIN) || accountno==0 ) && (symbol==_Symbol || symbol=="All" ) && (magicno==InpMagicNumber || magicno==0 ) && profit >10 )
+           {
+            Print("All positions  ",_Symbol,"  closed");
+            ClosePositions();
+           }
+           if((symbol==_Symbol || symbol=="All" )  && breakeven && (magicno==InpMagicNumber || magicno==0 ))
+           {
+            Print("Break even activated  ",_Symbol,"  ");
+            BreakEven();
+           }
+            
+         }else
             {
-               Print("we are in here");
-               // attempt to delete/cancel the pending order
-               if(!trade.OrderDelete(ticket))
-               {
-                  PrintFormat("Failed to delete pending order #%I64u (magic=%d). Error=%d",
-                              ticket, magic, GetLastError());
-               }
-               else
-               {
-                  PrintFormat("Deleted pending order #%I64u (magic=%d).", ticket, magic);
-               }
+                Alert("Server error");
+                return INIT_FAILED;
             }
-         }
       }
-      else
-      {
-         // If OrderSelect fails, print error (helps debugging)
-         PrintFormat("OrderSelect(%d) failed, Error=%d", i, GetLastError());
-      }
+      
+      return INIT_SUCCEEDED;
+}
+
+string GetJsonValue(const string &json, const string &key) {
+   int pos = StringFind(json, "\"" + key + "\"");
+   if (pos == -1) return "";
+
+   pos = StringFind(json, ":", pos);
+   if (pos == -1) return "";
+
+   pos += 1;
+   while (StringGetCharacter(json, pos) == ' ') pos++;
+
+   bool quoted = (StringGetCharacter(json, pos) == '"');
+
+   int start = quoted ? pos + 1 : pos;
+   int end = start;
+
+   while (end < StringLen(json)) {
+      uchar ch = StringGetCharacter(json, end);
+      if ((quoted && ch == '"') || (!quoted && (ch == ',' || ch == '}')))
+         break;
+      end++;
    }
+
+   return StringSubstr(json, start, end - start);
+}
+bool StringToBool(string value)
+{
+   
+   //value = StringToLower(value);
+   Print("value: ",value);
+   if(value == "true")
+      return true;
+
+   return false;
+}
+
+void BreakEven()
+{
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+         double priceopen=PositionGetDouble(POSITION_PRICE_OPEN);
+         double tp=PositionGetDouble(POSITION_PROFIT);
+         double newSl=PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY?range.high:range.low; //buy,sell
+         long ticket=PositionGetTicket(i);
+         if(PositionSelectByTicket(ticket))
+           {
+             if(trade.PositionModify(ticket,newSl,tp))
+             {
+               Print("Position Modified Successfully");
+             }
+           }
+         
+     }
 }
