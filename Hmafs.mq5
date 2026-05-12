@@ -5,6 +5,7 @@
 #include <Trade/Trade.mqh>
 CTrade trade;
 
+input string url="https://fxaccountmanager.greatjourns.com/api.php";
 input double DailyProfitTarget=200;
 input double DailyLossStop=200;
 
@@ -46,7 +47,7 @@ int totalBars;
 int OnInit()
   {
     
-    
+   EventSetTimer(5);
     
    profitClosed=CalculateDailyProfitClosed(); 
     
@@ -66,18 +67,141 @@ int OnInit()
    }else{
     Print("Slow ",SlowPeriod," loaded successfully");
    }
+   
+   if (!ChartIndicatorAdd(0, 0, handleFastHMA) || !ChartIndicatorAdd(0, 0, handleSlowHMA))
+    {
+        Print("Failed to add indicator to chart");
+        return INIT_FAILED;
+    }
    //authorization of the Robot Expert advisor
    //Authorization();
    
    trade.SetExpertMagicNumber(InpMagicNumber);
+   
+ 
    return(INIT_SUCCEEDED);
   }
 
 void OnDeinit(const int reason)
   {
-
+     EventKillTimer();
+     if(handleFastHMA!=INVALID_HANDLE)
+        {
+         ChartIndicatorDelete(NULL,0,"Hull Moving Average(21, LWMA)");
+         IndicatorRelease(handleFastHMA);
+        }
+     if(handleSlowHMA!=INVALID_HANDLE)
+        {
+         ChartIndicatorDelete(NULL,0,"Hull Moving Average(150, LWMA)");
+         IndicatorRelease(handleSlowHMA);
+        }
+     
    
   }
+  
+   void OnTimer()
+   {
+       InternetAuth();
+       
+   }
+   
+int InternetAuth()
+{
+   if(!MQLInfoInteger(MQL_TESTER) )
+      {
+          char post[];
+          int accountNumber=9876; //AccountInfoInteger(ACCOUNT_LOGIN);
+          
+          string postText="{account_no="+IntegerToString(accountNumber)+"}";
+          //string postText = "{\"account_no\": 9876}";
+          StringToCharArray(postText, post, 0, StringLen(postText));  // Important: avoid null terminator
+          //StringToCharArray(postText,post,0,WHOLE_ARRAY,CP_UTF8);
+          char result[];
+          string resultHeaders;
+          
+          int response= WebRequest("POST",url,NULL,1000,post,result,resultHeaders);
+          Print("Server Response: ",response);
+          Print("Results: ",CharArrayToString(result));
+       
+         
+        
+         
+           
+       if(response==200)
+         {
+            Print("Response 200: ",response);
+            Print("Results 200: ",CharArrayToString(result));
+            
+            
+            
+         //{"accountno":1234,"symbol":"GPUSD.m","magicno":28374,"profit":30}   
+         string json = CharArrayToString(result);//"{\"success\":true,\"lotsize\":0.02,\"tp\":600,\"sl\":200}";
+         string accountnotxt="accountno";
+         long  accountno = StringToInteger(GetJsonValue(json, accountnotxt));
+         string symboltxt="symbol";
+         string symbol = GetJsonValue(json, symboltxt);
+         string magicnotxt="magicno";
+         long magicno = StringToInteger(GetJsonValue(json, magicnotxt));
+         string profittxt="profit";
+         int profit = StringToInteger(GetJsonValue(json, profittxt));
+         string breakeventxt="breakeven";
+         int breakeven = StringToInteger(GetJsonValue(json, breakeventxt));
+         
+         int total = ChartIndicatorsTotal(0, 0);
+             for (int i = 0; i < total; i++)
+          {
+              string name = ChartIndicatorName(0, 0, i);
+              Print("Indicator [", i, "]: ", name);
+          }
+         
+         Print("Extracted text=> accountno: ",accountno," symbol: ",symbol," magicno: ",magicno," profit:",profit);
+         
+         if((accountno==AccountInfoInteger(ACCOUNT_LOGIN) || accountno==0 ) && (symbol==_Symbol || symbol=="All" ) && (magicno==InpMagicNumber || magicno==0 ) && profit >10 )
+           {
+            Print("All positions  ",_Symbol,"  closed");
+             ClosePositions(3);
+            
+           }
+           if((symbol==_Symbol || symbol=="All" )  && breakeven && (magicno==InpMagicNumber || magicno==0 ))
+           {
+            Print("Break even activated  ",_Symbol,"  ");
+            
+           }
+            
+         }else
+            {
+                Alert("Server error");
+                return INIT_FAILED;
+            }
+      }
+      
+      return INIT_SUCCEEDED;
+}
+string GetJsonValue(const string &json, const string &key) {
+   int pos = StringFind(json, "\"" + key + "\"");
+   if (pos == -1) return "";
+
+   pos = StringFind(json, ":", pos);
+   if (pos == -1) return "";
+
+   pos += 1;
+   while (StringGetCharacter(json, pos) == ' ') pos++;
+
+   bool quoted = (StringGetCharacter(json, pos) == '"');
+
+   int start = quoted ? pos + 1 : pos;
+   int end = start;
+
+   while (end < StringLen(json)) {
+      uchar ch = StringGetCharacter(json, end);
+      if ((quoted && ch == '"') || (!quoted && (ch == ',' || ch == '}')))
+         break;
+      end++;
+   }
+
+   return StringSubstr(json, start, end - start);
+}   
+
 void BlockBlow()
 {
   if(AccountInfoDouble(ACCOUNT_EQUITY) <5)
@@ -155,7 +279,7 @@ void OnTick()
           Print("Up Trend");
           if(cntSell>0)
            {
-                 ClosePosition(false);
+                 ClosePositions(2);
            }
            //Detecting Buy
           if(fastBuffer[2]>fastBuffer[1] && fastBuffer[1] <fastBuffer[0])
@@ -188,7 +312,7 @@ void OnTick()
                   {
                     if(TpPoint==0)
                       {
-                        ClosePosition(true);
+                        ClosePositions(1);
                       }
                    
                   }
@@ -202,7 +326,7 @@ void OnTick()
           Print("Down Trend");
           if(cntBuy>0 )
           {
-            ClosePosition(true);
+            ClosePositions(1);
           }
           //Detect Sell
           if(fastBuffer[2]<fastBuffer[1] && fastBuffer[1] >fastBuffer[0])
@@ -237,7 +361,7 @@ void OnTick()
                   {
                       if(TpPoint==0)
                         {
-                          ClosePosition(false);
+                         ClosePositions(2);
                         }
                    
                   }
@@ -251,47 +375,34 @@ void OnTick()
    
   }
    
-  void Countpositions(int &cntBuy,int &cntSell)
-{
-    cntBuy=0;
-    cntSell=0;
-    
-    int total=PositionsTotal()-1;
-    
-    for(int i=total;i>=0;i--)
-      {
-         ulong ticket=PositionGetTicket(i);
-         ulong MagicNo=PositionGetInteger(POSITION_MAGIC);
-         if(PositionSelectByTicket(ticket))
-           {
-              if(MagicNo==InpMagicNumber)
-                {
-                  if(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY){ cntBuy++;}
-                  if(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_SELL){ cntSell++;}
-                }
-           }
-      }
-}
+  
 
-void ClosePosition(int buy_sell)
+void ClosePositions(int buy_sell)
 {
-       
-    int total=PositionsTotal()-1;
-    
-    for(int i=total;i>=0;i--)
-      {
-         ulong ticket=PositionGetTicket(i);
-         ulong MagicNo=PositionGetInteger(POSITION_MAGIC);
-         if(PositionSelectByTicket(ticket))
-           {
-              if(MagicNo==InpMagicNumber)
-                {
-                  if(!buy_sell && PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY){ continue;}
-                  if(buy_sell && PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_SELL){ continue;}
-                  trade.PositionClose(ticket);
-                }
-           }
-      }
+   for(int i=PositionsTotal()-1;i>=0;i--)
+          {
+            ulong posTicket=PositionGetTicket(i);
+            long magicno=PositionGetInteger(POSITION_MAGIC);
+            ENUM_POSITION_TYPE type=PositionGetInteger(POSITION_TYPE);
+            if(magicno==InpMagicNumber)
+              {
+                if(buy_sell==1 && type==POSITION_TYPE_BUY)
+                  {
+                     trade.PositionClose(posTicket);
+                  }
+                if(buy_sell==2 && type==POSITION_TYPE_SELL)
+                  {
+                     trade.PositionClose(posTicket);
+                  }
+                if(buy_sell==3)
+                  {
+                     trade.PositionClose(posTicket);
+                  }  
+              }
+            
+            
+          }
+
 }
 //calculate lots
 
@@ -553,3 +664,4 @@ bool Countpositions(int &cntBuy,int &cntSell)
       
       return true;
 }
+

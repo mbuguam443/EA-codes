@@ -14,10 +14,12 @@ enum TRIGGER_MODE
    ONE_SIDED=1,
    TWO_SIDED=2
   };
+input bool EnableNews=false; //Disable News ?  
 input string url="https://fxaccountmanager.greatjourns.com/api.php";
 input TRIGGER_MODE InpTriggerMode=ONE_SIDED;
 input double DailyProfitTarget=20; //Daily Profit Target in %
 input double DailyLossStop=-10; //Daily Stop in %
+input bool Reversalbreakout=false;
 
 
 double profitClosed;
@@ -126,7 +128,14 @@ void OnTick()
      double profitOpen=accountEquity-accountBalance;
      double profitDay=profitOpen+profitClosed;
      
-     
+     if(EnableNews)
+       {
+         if(isNewsEventAhead())
+          {
+           Print("Danger news ahead!!!!....");
+           trade.PositionClose(_Symbol);
+          }
+       }
      
      
      
@@ -213,15 +222,38 @@ void CreatePendingOrder()
           //open a Position
           
           //calculate stoploss and Take profit
-          double sl=InpStopLoss==0?0: NormalizeDouble(range.high-(range.high-range.low)*InpStopLoss*0.01,_Digits);
-          double tp=InpTakeProfit==0?0:NormalizeDouble(range.high+(range.high-range.low)*InpTakeProfit*0.01,_Digits);
-          //calculate lots
-          double lots;
-          if(!CalculateLots(range.high-sl,lots)){return;}
+          //calculate lots later
+            double rangeSize = range.high - range.low;
+
+            double entry = range.high;
+            double sl, tp;
+            
+            //calculate lots later
+            double lots;
+            
+            
+            //create order
+            if(Reversalbreakout)
+            {
+               // SELL LIMIT (reversal from top)
+               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpStopLoss * 0.01, _Digits); // ABOVE
+               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpTakeProfit * 0.01, _Digits); // BELOW
+            
+               if(!CalculateLots(sl - entry, lots)) return;
+            
+               trade.SellLimit(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range reversal sell");
+            }
+            else
+            {
+               // BUY STOP (breakout)
+               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpStopLoss * 0.01, _Digits); // BELOW
+               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpTakeProfit * 0.01, _Digits); // ABOVE
+            
+               if(!CalculateLots(entry - sl, lots)) return;
+            
+               trade.BuyStop(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range breakout buy");
+            }
           
-          //create buy Stop
-          
-          trade.BuyStop(lots,range.high,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,range.close_time,"range pending Buy order");
         }
         
        //create a Sell Stop Order
@@ -229,16 +261,32 @@ void CreatePendingOrder()
         {
           range.f_low_breakout=true;
           
-          //open a Position
-          
-          //calculate stoploss and Take profit
-          double sl=InpStopLoss==0?0:NormalizeDouble(range.low+(range.high-range.low)*InpStopLoss*0.01,_Digits);
-          double tp=InpTakeProfit==0?0:NormalizeDouble(range.low-(range.high-range.low)*InpTakeProfit*0.01,_Digits);
-          
-          //calculate lots
-          double lots;
-          if(!CalculateLots(sl-range.low,lots)){return;}
-          trade.SellStop(lots,range.low,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,range.close_time,"range pending Sell order");
+            double rangeSize = range.high - range.low;
+            double entry = range.low;
+            double sl, tp;
+            double lots;
+            
+            if(Reversalbreakout)
+            {
+               // BUY LIMIT (reversal from bottom)
+               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpStopLoss * 0.01, _Digits); // BELOW
+               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpTakeProfit * 0.01, _Digits); // ABOVE
+            
+               if(!CalculateLots(entry - sl, lots)) return;
+            
+               trade.BuyLimit(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range reversal buy");
+            }
+            else
+            {
+               // SELL STOP (breakout)
+               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpStopLoss * 0.01, _Digits); // ABOVE
+               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpTakeProfit * 0.01, _Digits); // BELOW
+            
+               if(!CalculateLots(sl - entry, lots)) return;
+            
+               trade.SellStop(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range breakout sell");
+            }
+         
         }  
     }
 }
@@ -868,4 +916,37 @@ void BreakEven()
            }
          
      }
+}
+
+
+bool isNewsEventAhead()
+{
+   MqlCalendarValue value[];
+     datetime startTime=iTime(_Symbol,PERIOD_CURRENT,0);
+     datetime endTime=startTime+PeriodSeconds(PERIOD_D1);
+     CalendarValueHistory(value,startTime,endTime,NULL,NULL);
+     
+     
+     
+     for(int i=0;i<ArraySize(value);i++)
+       {
+         MqlCalendarEvent event;
+         CalendarEventById(value[i].event_id,event);
+         MqlCalendarCountry country;
+         CalendarCountryById(event.country_id,country);
+         
+         string mysymbol=_Symbol;
+         if(StringFind(mysymbol,country.currency)<0)continue;
+         if(event.importance==CALENDAR_IMPORTANCE_LOW)continue;
+         if(event.importance==CALENDAR_IMPORTANCE_NONE)continue;
+         
+         if(TimeCurrent()>=value[i].time-15*PeriodSeconds(PERIOD_M1) && TimeCurrent()<value[i].time+15*PeriodSeconds(PERIOD_M1))
+           {
+            Print("News Ahead !!!!!!!");
+            return true;
+           }
+         Print(event.name," => ", value[i].actual_value/1000000);
+       }
+       
+       return false;
 }
