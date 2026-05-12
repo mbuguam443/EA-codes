@@ -70,19 +70,32 @@ void OnTradeTransaction(
    const MqlTradeResult& result
 )
 {
+   
+   
+   
+   // 1. Only deal events
    if(trans.type != TRADE_TRANSACTION_DEAL_ADD)
       return;
 
-   ulong deal = trans.deal;
+   ulong mydeal = trans.deal;
+   if(mydeal == 0)
+      return;
 
+   // 2. Load history
    HistorySelect(0, TimeCurrent());
 
-   if((int)HistoryDealGetInteger(deal, DEAL_ENTRY) == DEAL_ENTRY_OUT)
-   {
-      double profit = HistoryDealGetDouble(deal, DEAL_PROFIT);
+   // 3. Only closing deals
+   if((int)HistoryDealGetInteger(mydeal, DEAL_ENTRY) != DEAL_ENTRY_OUT)
+      return;
+
+   // 4. Get profit
+   double myprofit = HistoryDealGetDouble(mydeal, DEAL_PROFIT);
+
+    Print("Profit: ", myprofit);
+
 
       // update running state
-      running_profit += profit;
+      running_profit += myprofit;
    
       // update bounds (NO rescan loop)
       if(running_profit > max_profit) max_profit = running_profit;
@@ -93,8 +106,13 @@ void OnTradeTransaction(
       ArrayResize(cumulative_profit_array, s + 1);
       cumulative_profit_array[s] = running_profit;
    
-      Draw();
-   }
+        
+         Draw();              // build chart
+         ChartRedraw();       // force refresh
+         
+       
+      Print("Draw again ",running_profit," profit: ",myprofit);
+   
    
 }
 
@@ -156,43 +174,38 @@ void Draw()
 
    int n = ArraySize(cumulative_profit_array);
 
-   if(n < 2)
-      return;
-
    double range = max_profit - min_profit;
    if(range == 0) range = 1;
 
-   int prev_x = 0;
-   int prev_y = 0;
-
-   for(int i = 0; i < n; i++)
+   if(n >= 2)
    {
-      int x = (int)((double)i / (n - 1) * W);
+      int prev_x = 0;
+      int prev_y = 0;
 
-      double value = cumulative_profit_array[i];
+      for(int i = 0; i < n; i++)
+      {
+         int x = (int)((double)i / (n - 1) * W);
 
-      int y = H - (int)((value - min_profit) / range * H);
+         double value = cumulative_profit_array[i];
 
-      // draw line
-      if(i > 0)
-         canvas.Line(prev_x, prev_y, x, y, ColorToARGB(clrLime));
+         int y = H - (int)((value - min_profit) / range * H);
 
-      // draw point
-      //canvas.FillCircle(x, y, 2, ColorToARGB(clrWhite));
+         if(i > 0)
+            canvas.Line(prev_x, prev_y, x, y, ColorToARGB(clrLime));
 
-      prev_x = x;
-      prev_y = y;
+         prev_x = x;
+         prev_y = y;
+      }
    }
 
-   // label
+   // ✅ ALWAYS draw text (even if n < 2)
    canvas.FontSet("Consolas", 15);
 
-   canvas.TextOut(
-      150,
-      15,
-      "Click 'D' to hide\show PnL: " + DoubleToString(running_profit, 2),
-      ColorToARGB(clrWhite)
-   );
+   string text =
+      "Click 'D' to hide/show | PnL: " +
+      DoubleToString(running_profit, 2);
 
-   canvas.Update();
+   canvas.TextOut(150, 15, text, ColorToARGB(clrWhite));
+
+   canvas.Update(true);
 }
