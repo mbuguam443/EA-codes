@@ -19,6 +19,9 @@ int totalbarM1=0;
 double running_profit = 0;
 double cumulative_profit_array[];
 
+double peak_equity = 0;
+double peak_dd = 0;
+
 double min_profit = 0;
 double max_profit = 0;
 bool dashboard_visible = true;
@@ -123,6 +126,17 @@ void OnTradeTransaction(
          Draw();              // build chart
          ChartRedraw();       // force refresh
          
+             
+       // 1. update peak equity
+      if(running_profit > peak_equity)
+         peak_equity = running_profit;
+      
+      // 2. compute drawdown
+      double current_dd = peak_equity - running_profit;
+      
+      // 3. track worst drawdown
+      if(current_dd > peak_dd)
+         peak_dd = current_dd;    
        
       Print("Draw again ",running_profit," profit: ",myprofit);
    
@@ -178,6 +192,17 @@ void BuildHistory()
       int s = ArraySize(cumulative_profit_array);
       ArrayResize(cumulative_profit_array, s + 1);
       cumulative_profit_array[s] = running_profit;
+      
+      // 1. update peak equity
+      if(running_profit > peak_equity)
+         peak_equity = running_profit;
+      
+      // 2. compute drawdown
+      double current_dd = peak_equity - running_profit;
+      
+      // 3. track worst drawdown
+      if(current_dd > peak_dd)
+         peak_dd = current_dd;  
    }
 }
 
@@ -204,7 +229,7 @@ void Draw()
          int y = H - (int)((value - min_profit) / range * H);
 
          if(i > 0)
-            canvas.Line(prev_x, prev_y, x, y, ColorToARGB(clrLime));
+            canvas.Line(prev_x, prev_y, x, y, ColorToARGB(clrBlue));
 
          prev_x = x;
          prev_y = y;
@@ -212,13 +237,13 @@ void Draw()
    }
 
    // ✅ ALWAYS draw text (even if n < 2)
-   canvas.FontSet("Consolas", 15);
+   canvas.FontSet("Consolas", 14);
 
    string text =
       "Click 'D' to hide/show | PnL: " +
-      DoubleToString(running_profit, 2);
+      DoubleToString(running_profit, 2)+" peak_equity: "+DoubleToString(peak_equity,2)+" peak_dd: -"+DoubleToString(peak_dd,2);
 
-   canvas.TextOut(150, 15, text, ColorToARGB(clrWhite));
+   canvas.TextOut(30, 15, text, ColorToARGB(clrWhite));
 
    canvas.Update(true);
 }
