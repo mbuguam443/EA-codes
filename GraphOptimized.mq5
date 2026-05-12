@@ -6,6 +6,10 @@
 #property copyright "Copyright 2025, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
 #property version   "1.00"
+
+#include<Trade/Trade.mqh>
+CTrade trade;
+int totalbarM1=0;
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
@@ -30,6 +34,9 @@ string CANVAS_NAME = "DASH_CANVAS";
 
 int OnInit()
   {
+    totalbarM1=iBars(_Symbol,PERIOD_M1);
+   trade.Buy(0.01);
+   
    canvas.CreateBitmapLabel(
       0, 0,
       "DASH",
@@ -60,7 +67,13 @@ void OnDeinit(const int reason)
 void OnTick()
   {
 //---
-   
+    int bars=iBars(_Symbol,PERIOD_M1);
+    if(totalbarM1!=bars)
+      {
+        trade.PositionClose(_Symbol);
+        //Print("Trade Close Automatically.");
+      }
+      
   }
 //+------------------------------------------------------------------+
 
