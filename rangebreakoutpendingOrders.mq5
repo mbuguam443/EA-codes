@@ -28,7 +28,9 @@ int H = 300;
 
 CCanvas canvas;
 string CANVAS_NAME = "DASH_CANVAS";
-input double AllowedDD=21;
+input double StartingCapital=100;
+input double AllowedDD=21; //AllowedDD in %
+input double PercentReduce=0.5;
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -105,6 +107,10 @@ RANGE_STRUCT range;
 MqlTick  lastTick;  
 CTrade trade;
 
+bool enableEA=true;
+double newPercentLot;
+double peak_dd_percent=0.0;
+
 
 int OnInit()
   {
@@ -118,6 +124,8 @@ int OnInit()
       {
         CalculateRange();
       }
+      
+      newPercentLot=InpLots;
       
       trade.SetExpertMagicNumber(InpMagicNumber);
       
@@ -167,6 +175,11 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    
+   if(!enableEA)
+     {
+       
+       return;
+     }
    
    double accountBalance=AccountInfoDouble(ACCOUNT_BALANCE);
      double accountEquity=AccountInfoDouble(ACCOUNT_EQUITY);
@@ -621,7 +634,7 @@ bool CalculateLots(double slDistance, double &lots)
      double tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
      double volumestep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
      
-     double riskMoney=InpLotMode==LOT_MODE_MONEY?InpLots:AccountInfoDouble(ACCOUNT_EQUITY)*InpLots*0.01;
+     double riskMoney=InpLotMode==LOT_MODE_MONEY?InpLots:AccountInfoDouble(ACCOUNT_EQUITY)*newPercentLot*0.01;
      double moneyVolumeStep=(slDistance/tickSize)*tickValue*volumestep;
      
      lots=MathFloor(riskMoney/moneyVolumeStep)*volumestep;
@@ -846,15 +859,42 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
       cumulative_profit_array[s] = running_profit;
    
       // 1. update peak equity
-      if(running_profit > peak_equity)
+      if(running_profit > peak_equity){
+      
          peak_equity = running_profit;
+         
+         newPercentLot=newPercentLot+PercentReduce;
+         Print("######## Risk increased automatically by ######",newPercentLot);
+         }
+         
       
       // 2. compute drawdown
       double current_dd = peak_equity - running_profit;
       
+      
       // 3. track worst drawdown
-      if(current_dd > peak_dd)
+      if(current_dd > peak_dd){
          peak_dd = current_dd;
+         
+         
+         
+         newPercentLot=newPercentLot-PercentReduce;
+         
+         Print("######## Risk Decreased automatically by ######",newPercentLot);
+          
+         }
+      //if(peak_equity>0)
+      {   
+         peak_dd_percent = (peak_dd/(StartingCapital+peak_equity))*100;
+      } 
+      Print("peak_equity: ",peak_equity," peak_dd: ",peak_dd," ratio of peakdd: ",(peak_dd/(StartingCapital+peak_equity)));
+       
+      if(peak_dd_percent >AllowedDD)
+        {
+          enableEA=false;
+          ClosePositions();
+          Print("========EA draw Limit hit========");
+        }    
         
       Draw();              // build chart
       ChartRedraw();       // force refresh
@@ -1204,9 +1244,10 @@ void Draw()
          double value = cumulative_profit_array[i];
 
          int y = H - (int)((value - min_profit) / chart_range  * (H-20))-20;
-
+         
          if(i > 0)
             canvas.Line(prev_x, prev_y, x, y, ColorToARGB(clrBlue));
+            
 
          prev_x = x;
          prev_y = y;
@@ -1218,11 +1259,14 @@ void Draw()
 
    string text =
       "Click 'D' to hide/show | PnL: " +
-      DoubleToString(running_profit, 2)+" peak_equity: "+DoubleToString(peak_equity,2)+" peak_dd: -"+DoubleToString(peak_dd,2);
+      DoubleToString(StartingCapital+running_profit, 2)+" peak_equity: "+DoubleToString(StartingCapital+peak_equity,2)+" peak_dd: -"+DoubleToString(peak_dd,2);
    Print("peak_equity: ",peak_dd);
    canvas.TextOut(30, 15, text, ColorToARGB(clrWhite));
-   string alloweddd="Max Allowed DD: -"+DoubleToString(AllowedDD,2);
+   string alloweddd="Max Allowed DD: -"+DoubleToString(AllowedDD,1)+"% currentDD %:- "+DoubleToString(peak_dd_percent,2)+" EnableEA: "+enableEA+" Risk %:"+DoubleToString(newPercentLot,2);
    canvas.TextOut(30, 30, alloweddd, ColorToARGB(clrWhite));
-
+   
+   int ddline = H - (int)((peak_equity-min_profit) / chart_range * (H - 20)) - 20;
+   Print("peak_equity ",peak_equity," min_profit: ",min_profit," max_profit: ",max_profit);
+   //canvas.Line(0, ddline, W, ddline, ColorToARGB(clrBeige));
    canvas.Update(true);
 }

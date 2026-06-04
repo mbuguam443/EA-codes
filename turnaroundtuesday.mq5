@@ -77,8 +77,9 @@ void OnTick()
                  {
                       double ask =SymbolInfoDouble(_Symbol,SYMBOL_ASK);
                       double sl=ask-ask*SlPercent;
+                      sl=NormalizeDouble(sl,_Digits);
                       double lots=CalculateLotSize(SlPercent,ask-sl);
-                      if(trade.Buy(0.01,_Symbol,ask,sl,0," turn around tuesday"))
+                      if(trade.Buy(0.01,_Symbol,ask,0,0," turn around tuesday"))
                       {
                           Print("hello there Day of week: ",DayOpen," ",timeOpen);
                          LastDay=dt.day_of_year;
