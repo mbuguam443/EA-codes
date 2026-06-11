@@ -135,7 +135,7 @@ int OnInit()
        profitClosed=CalculateDailyProfitClosed();
        
        //graph code
-       trade.Buy(0.01,NULL,0,0,0,"grap optimized");
+       
    
    canvas.CreateBitmapLabel(
       0, 0,
