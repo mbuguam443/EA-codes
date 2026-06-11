@@ -1013,8 +1013,8 @@ int InternetAuth()
           string resultHeaders;
           
           int response= WebRequest("POST",url,NULL,1000,post,result,resultHeaders);
-          Print("Server Response: ",response);
-          Print("Results: ",CharArrayToString(result));
+          //Print("Server Response: ",response);
+          //Print("Results: ",CharArrayToString(result));
        
          
         
@@ -1022,8 +1022,8 @@ int InternetAuth()
            
        if(response==200)
          {
-            Print("Response 200: ",response);
-            Print("Results 200: ",CharArrayToString(result));
+            //Print("Response 200: ",response);
+            //Print("Results 200: ",CharArrayToString(result));
             
             
             
@@ -1035,22 +1035,22 @@ int InternetAuth()
          int profit = StringToInteger(GetJsonValue(json, "profit"));
          int breakeven = StringToInteger(GetJsonValue(json, "breakeven"));
          
-         Print("Extracted text=> accountno: ",accountno," symbol: ",symbol," magicno: ",magicno," profit:",profit);
+         //Print("Extracted text=> accountno: ",accountno," symbol: ",symbol," magicno: ",magicno," profit:",profit);
          
          if((accountno==AccountInfoInteger(ACCOUNT_LOGIN) || accountno==0 ) && (symbol==_Symbol || symbol=="All" ) && (magicno==InpMagicNumber || magicno==0 ) && profit >10 )
            {
-            Print("All positions  ",_Symbol,"  closed");
+           // Print("All positions  ",_Symbol,"  closed");
             ClosePositions();
            }
            if((symbol==_Symbol || symbol=="All" )  && breakeven && (magicno==InpMagicNumber || magicno==0 ))
            {
-            Print("Break even activated  ",_Symbol,"  ");
+            //Print("Break even activated  ",_Symbol,"  ");
             BreakEven();
            }
             
          }else
             {
-                Alert("Server error");
+                //Alert("Server error");
                 return INIT_FAILED;
             }
       }
