@@ -121,8 +121,18 @@ double peak_dd_percent=0.0;
 int OnInit()
   {
       EventSetTimer(5);
+      string account_name = AccountInfoString(ACCOUNT_NAME);
+
+      Print("Account Name: ", account_name);
       
-      SendTelegramMessage("ChatBot EA started.\n Command:\n balance"+_Symbol+"\n equity"+_Symbol+"\n screenshot"+_Symbol+" \n help "+"\n disable"+_Symbol+"\n enable"+_Symbol);
+      SendTelegramMessage("ChatBot "+_Symbol+" EA started "+account_name+
+                          "\n MagicNumber:"+InpMagicNumber+
+                          "\nServer: " + AccountInfoString(ACCOUNT_SERVER)+
+                           ".\n Command:\n balance"+InpMagicNumber+
+                           "\n equity"+InpMagicNumber+
+                           "\n screenshot"+InpMagicNumber+
+                           " \n help "+"\n disable"+InpMagicNumber+
+                            "\n enable"+InpMagicNumber);
       if(!CheckInputs())
       {
           return INIT_PARAMETERS_INCORRECT;
@@ -1278,7 +1288,7 @@ void ProcessMessage(string json)
    }
 
    // Process commands
-   if(StringFind(json, "\"text\":\"balance"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"balance"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
       double balance = AccountInfoDouble(ACCOUNT_BALANCE);
 
@@ -1288,7 +1298,7 @@ void ProcessMessage(string json)
       );
    }
 
-   if(StringFind(json, "\"text\":\"equity"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"equity"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
       double equity = AccountInfoDouble(ACCOUNT_EQUITY);
 
@@ -1297,7 +1307,7 @@ void ProcessMessage(string json)
          DoubleToString(equity, 2)
       );
    }
-   if(StringFind(json, "\"text\":\"screenshot"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"screenshot"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
       TakeScreenshot();
       SendTelegramMessage("Screenshot captured.");
@@ -1306,17 +1316,24 @@ void ProcessMessage(string json)
    }
    if(StringFind(json, "\"text\":\"help\"") >= 0)
    {
-      
-      SendTelegramMessage("ChatBot EA started.\n Command:\n balance"+_Symbol+"\n equity"+_Symbol+"\n screenshot"+_Symbol+" ");
+      string account_name = AccountInfoString(ACCOUNT_NAME);
+      SendTelegramMessage("ChatBot "+_Symbol+" EA started "+account_name+
+                          "\n MagicNumber:"+IntegerToString(InpMagicNumber)+
+                          "\nServer: " + AccountInfoString(ACCOUNT_SERVER)+
+                           ".\n Command:\n balance"+IntegerToString(InpMagicNumber)+
+                           "\n equity"+IntegerToString(InpMagicNumber)+
+                           "\n screenshot"+IntegerToString(InpMagicNumber)+
+                           " \n help "+"\n disable"+IntegerToString(InpMagicNumber)+
+                            "\n enable"+IntegerToString(InpMagicNumber));
       
    }
-   if(StringFind(json, "\"text\":\"disable"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"disable"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
        enableEA=false;
       SendTelegramMessage("EA disabled successfully");
       Draw();
    }
-   if(StringFind(json, "\"text\":\"enable"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"enable"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
        enableEA=true;
       SendTelegramMessage("EA enabled successfully");

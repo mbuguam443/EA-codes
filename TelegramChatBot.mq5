@@ -2,13 +2,24 @@
 
 input string BotToken = "8685310495:AAGbmwqgdN81vrifE8ImmIzVsor9iDvr4Tk";
 input string ChatID   = "1322296326";
+input ulong InpMagicNumber=5678764;
 long last_update_id = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
    EventSetTimer(5);
-   SendTelegramMessage("ChatBot EA started.\n Command:\n balance"+_Symbol+"\n equity"+_Symbol+"\n screenshot"+_Symbol+"\n help");
+   string account_name = AccountInfoString(ACCOUNT_NAME);
+
+   Print("Account Name: ", account_name);
+   SendTelegramMessage("ChatBot "+_Symbol+" EA started "+account_name+
+                          "\n MagicNumber:"+IntegerToString(InpMagicNumber)+
+                          "\nServer: " + AccountInfoString(ACCOUNT_SERVER)+
+                           ".\n Command:\n balance"+IntegerToString(InpMagicNumber)+
+                           "\n equity"+IntegerToString(InpMagicNumber)+
+                           "\n screenshot"+IntegerToString(InpMagicNumber)+
+                           " \n help "+"\n disable"+IntegerToString(InpMagicNumber)+
+                            "\n enable"+IntegerToString(InpMagicNumber));
    return(INIT_SUCCEEDED);
 }
 //+------------------------------------------------------------------+
@@ -136,7 +147,7 @@ void ProcessMessage(string json)
    }
 
    // Process commands
-   if(StringFind(json, "\"text\":\"balance"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"balance"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
       double balance = AccountInfoDouble(ACCOUNT_BALANCE);
 
@@ -146,7 +157,7 @@ void ProcessMessage(string json)
       );
    }
 
-   if(StringFind(json, "\"text\":\"equity"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"equity"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
       double equity = AccountInfoDouble(ACCOUNT_EQUITY);
 
@@ -155,7 +166,7 @@ void ProcessMessage(string json)
          DoubleToString(equity, 2)
       );
    }
-   if(StringFind(json, "\"text\":\"screenshot"+_Symbol+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"screenshot"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
       TakeScreenshot();
       SendTelegramMessage("Screenshot captured.");
@@ -165,7 +176,7 @@ void ProcessMessage(string json)
    if(StringFind(json, "\"text\":\"help\"") >= 0)
    {
       
-      SendTelegramMessage("ChatBot EA started.\n Command:\n balance"+_Symbol+"\n equity"+_Symbol+"\n screenshot"+_Symbol+" ");
+      SendTelegramMessage("ChatBot "+_Symbol+" EA started.\n Command:\n balance"+IntegerToString(InpMagicNumber)+"\n equity"+IntegerToString(InpMagicNumber)+"\n screenshot"+IntegerToString(InpMagicNumber)+" ");
       
    }
 }
