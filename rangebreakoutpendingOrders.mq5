@@ -14,6 +14,7 @@
 //+------------------------------------------------------------------+
 input string BotToken = "8685310495:AAGbmwqgdN81vrifE8ImmIzVsor9iDvr4Tk";
 input string ChatID   = "1322296326";
+input int   TeleCycleSeconds=4;
 long last_update_id = 0;
 
 
@@ -116,23 +117,42 @@ CTrade trade;
 bool enableEA=true;
 double newPercentLot;
 double peak_dd_percent=0.0;
+//chat variabe
+
+double riskincrement=0;
+double profitpercenttarget=0;
+double losspercentlimit=0;
+double maxdrawdown=0;
+double startCapital=0;
+double finishProfit=0;
+string help="ChatBot "+_Symbol+" EA started \n Account: "+AccountInfoString(ACCOUNT_NAME)+
+                          "\n MagicNumber:"+InpMagicNumber+
+                          "\nServer: " + AccountInfoString(ACCOUNT_SERVER)+
+                           ".\n Command:\n balance"+
+                           "\n equity"+
+                           "\n screenshot"+
+                           " \n help "+
+                           "\n disable"+InpMagicNumber+
+                           "\n closeposition"+InpMagicNumber+
+                           "\n newPercentLot"+InpMagicNumber+
+                           "\n riskincrement"+InpMagicNumber+
+                           "\n profitpercenttarget"+InpMagicNumber+
+                           "\n losspercentlimit"+InpMagicNumber+
+                           "\n maxdrawdown"+InpMagicNumber+
+                           "\n startCapital"+InpMagicNumber+
+                           "\n finishProfit"+InpMagicNumber+    
+                            "\n enable"+InpMagicNumber;
+
 
 
 int OnInit()
   {
-      EventSetTimer(5);
-      string account_name = AccountInfoString(ACCOUNT_NAME);
+      EventSetTimer(TeleCycleSeconds);
+      //string account_name = AccountInfoString(ACCOUNT_NAME);
 
-      Print("Account Name: ", account_name);
+      //Print("Account Name: ", account_name);
       
-      SendTelegramMessage("ChatBot "+_Symbol+" EA started "+account_name+
-                          "\n MagicNumber:"+InpMagicNumber+
-                          "\nServer: " + AccountInfoString(ACCOUNT_SERVER)+
-                           ".\n Command:\n balance"+InpMagicNumber+
-                           "\n equity"+InpMagicNumber+
-                           "\n screenshot"+InpMagicNumber+
-                           " \n help "+"\n disable"+InpMagicNumber+
-                            "\n enable"+InpMagicNumber);
+      SendTelegramMessage(help);
       if(!CheckInputs())
       {
           return INIT_PARAMETERS_INCORRECT;
@@ -143,7 +163,15 @@ int OnInit()
         CalculateRange();
       }
       
-      newPercentLot=InpLots;
+       
+      //intialize input for chat
+       newPercentLot=InpLots;
+       riskincrement=PercentReduce;
+       profitpercenttarget=DailyProfitTarget;
+       losspercentlimit=DailyLossStop;
+       maxdrawdown=AllowedDD;
+       startCapital=StartingCapital;
+       finishProfit=FinishLine;
       
       trade.SetExpertMagicNumber(InpMagicNumber);
       
@@ -164,7 +192,7 @@ int OnInit()
    );
    
   
-   BuildHistory();
+   
 
    Draw();
        //graph code
@@ -214,10 +242,10 @@ void OnTick()
      Comment(" Profit Open: ",DoubleToString(profitOpen,2),
              " Profit Closed: ",DoubleToString(profitClosed,2),
              " Profit for the  Day: ",DoubleToString(profitDay,2),
-             " Target Profit: ",DoubleToString((DailyProfitTarget*0.01*AccountInfoDouble(ACCOUNT_BALANCE)),2),
-             " Stop Loss : ",DoubleToString((DailyLossStop*0.01*AccountInfoDouble(ACCOUNT_BALANCE)),2));
+             " Target Profit: ",DoubleToString((profitpercenttarget*0.01*AccountInfoDouble(ACCOUNT_BALANCE)),2),
+             " Stop Loss : ",DoubleToString((losspercentlimit*0.01*AccountInfoDouble(ACCOUNT_BALANCE)),2));
              
-    if(profitDay >(DailyProfitTarget*0.01*AccountInfoDouble(ACCOUNT_BALANCE)) || profitDay <(DailyLossStop*0.01*AccountInfoDouble(ACCOUNT_BALANCE)) || AccountInfoDouble(ACCOUNT_EQUITY)>=FinishLine || !enableEA)
+    if(profitDay >(profitpercenttarget*0.01*AccountInfoDouble(ACCOUNT_BALANCE)) || profitDay <(losspercentlimit*0.01*AccountInfoDouble(ACCOUNT_BALANCE)) || AccountInfoDouble(ACCOUNT_EQUITY)>=finishProfit || !enableEA)
       {
         for(int i=PositionsTotal()-1;i>=0;i--)
           {
@@ -641,14 +669,14 @@ bool CalculateLots(double slDistance, double &lots)
   
   if(InpLotMode==LOT_MODE_FIXED)
     {
-     lots=InpLots;
+     lots=newPercentLot;
     }else
     {
      double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
      double tickValue=_Symbol=="XAUUSD"?SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE)*100:SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
      double volumestep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
      
-     double riskMoney=InpLotMode==LOT_MODE_MONEY?InpLots:AccountInfoDouble(ACCOUNT_EQUITY)*newPercentLot*0.01;
+     double riskMoney=InpLotMode==LOT_MODE_MONEY?newPercentLot:AccountInfoDouble(ACCOUNT_EQUITY)*newPercentLot*0.01;
      double moneyVolumeStep=(slDistance/tickSize)*tickValue*volumestep;
      
      lots=MathFloor(riskMoney/moneyVolumeStep)*volumestep;
@@ -877,8 +905,9 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
       
          peak_equity = running_profit;
          
-         newPercentLot=newPercentLot+PercentReduce;
+         newPercentLot=newPercentLot+riskincrement;
          Print("######## Risk increased automatically by ######",newPercentLot);
+         SendTelegramMessage(_Symbol+" New peak Equity hit....MagicNo: "+InpMagicNumber); 
          }
          
       
@@ -890,20 +919,20 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
       if(current_dd > peak_dd){
          peak_dd = current_dd;
          
+         SendTelegramMessage(_Symbol+"New peak DD hit....MagicNo: "+InpMagicNumber);
          
-         
-         newPercentLot=newPercentLot-PercentReduce;
+         newPercentLot=newPercentLot-riskincrement;
          
          Print("######## Risk Decreased automatically by ######",newPercentLot);
           
          }
       //if(peak_equity>0)
       {   
-         peak_dd_percent = (peak_dd/(StartingCapital+peak_equity))*100;
+         peak_dd_percent = (peak_dd/(startCapital+peak_equity))*100;
       } 
-      Print("peak_equity: ",peak_equity," peak_dd: ",peak_dd," ratio of peakdd: ",(peak_dd/(StartingCapital+peak_equity)));
+      Print("peak_equity: ",peak_equity," peak_dd: ",peak_dd," ratio of peakdd: ",(peak_dd/(startCapital+peak_equity)));
        
-      if(peak_dd_percent >AllowedDD)
+      if(peak_dd_percent >maxdrawdown)
         {
           enableEA=false;
           ClosePositions();
@@ -1071,59 +1100,7 @@ void OnChartEvent(const int id,
    }
 }
 
-void BuildHistory()
-{
-    // RESET STATE
-   running_profit = 0;
-   peak_equity = 0;
-   peak_dd = 0;
 
-   min_profit = 0;
-   max_profit = 0;
-
-   ArrayFree(cumulative_profit_array);
-   HistorySelect(0, TimeCurrent());
-
-   int total = HistoryDealsTotal();
-
-   for(int i = 0; i < total; i++)
-   {
-      ulong deal = HistoryDealGetTicket(i);
-
-      if((int)HistoryDealGetInteger(deal, DEAL_ENTRY) != DEAL_ENTRY_OUT)
-         continue;
-
-      
-      ulong magicNo=HistoryDealGetInteger(deal,DEAL_MAGIC);
-      
-      if(magicNo==InpMagicNumber){
-      Print("MagicNo: ",magicNo);
-      double profit = HistoryDealGetDouble(deal, DEAL_PROFIT);
-
-      running_profit += profit;
-
-      // update bounds (NO rescaling loop later)
-      if(running_profit > max_profit) max_profit = running_profit;
-      if(running_profit < min_profit) min_profit = running_profit;
-
-      // store point
-      int s = ArraySize(cumulative_profit_array);
-      ArrayResize(cumulative_profit_array, s + 1);
-      cumulative_profit_array[s] = running_profit;
-      
-      // 1. update peak equity
-      if(running_profit > peak_equity)
-         peak_equity = running_profit;
-      
-      // 2. compute drawdown
-       double current_dd = peak_equity - running_profit;
-      
-      // 3. track worst drawdown
-      if(current_dd > peak_dd)
-         peak_dd = current_dd;  
-       }  
-   }
-}
 
 void Draw()
 {
@@ -1161,10 +1138,10 @@ void Draw()
 
    string text =
       _Symbol+" Click 'D' to hide/show | PnL: " +
-      DoubleToString(StartingCapital+running_profit, 2)+" peak_equity: "+DoubleToString(StartingCapital+peak_equity,2)+" peak_dd: -"+DoubleToString(peak_dd,2);
+      DoubleToString(startCapital+running_profit, 2)+" peak_equity: "+DoubleToString(startCapital+peak_equity,2)+" peak_dd: -"+DoubleToString(peak_dd,2);
    Print("peak_equity: ",peak_dd);
    canvas.TextOut(30, 15, text, ColorToARGB(clrWhite));
-   string alloweddd="Max Allowed DD: -"+DoubleToString(AllowedDD,1)+"% currentDD %:- "+DoubleToString(peak_dd_percent,2)+" EnableEA: "+enableEA+" Risk %:"+DoubleToString(newPercentLot,2);
+   string alloweddd="Max Allowed DD: -"+DoubleToString(maxdrawdown,1)+"% currentDD %:- "+DoubleToString(peak_dd_percent,2)+" EnableEA: "+enableEA+" Risk %:"+DoubleToString(newPercentLot,2);
    canvas.TextOut(30, 30, alloweddd, ColorToARGB(clrWhite));
    
    int ddline = H - (int)((peak_equity-min_profit) / chart_range * (H - 20)) - 20;
@@ -1288,43 +1265,36 @@ void ProcessMessage(string json)
    }
 
    // Process commands
-   if(StringFind(json, "\"text\":\"balance"+IntegerToString(InpMagicNumber)+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"balance\"") >= 0)
    {
       double balance = AccountInfoDouble(ACCOUNT_BALANCE);
 
       SendTelegramMessage(
-         "Balance = " +
+         AccountInfoString(ACCOUNT_NAME)+" Balance = " +
          DoubleToString(balance, 2)
       );
    }
 
-   if(StringFind(json, "\"text\":\"equity"+IntegerToString(InpMagicNumber)+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"equity\"") >= 0)
    {
       double equity = AccountInfoDouble(ACCOUNT_EQUITY);
 
       SendTelegramMessage(
-         "Equity = " +
+         AccountInfoString(ACCOUNT_NAME)+" Equity = " +
          DoubleToString(equity, 2)
       );
    }
-   if(StringFind(json, "\"text\":\"screenshot"+IntegerToString(InpMagicNumber)+"\"") >= 0)
+   if(StringFind(json, "\"text\":\"screenshot\"") >= 0)
    {
       TakeScreenshot();
-      SendTelegramMessage("Screenshot captured.");
+      SendTelegramMessage(AccountInfoString(ACCOUNT_NAME)+" Screenshot captured.");
       SendPhotoToTelegram("chart.png");
       
    }
    if(StringFind(json, "\"text\":\"help\"") >= 0)
    {
       string account_name = AccountInfoString(ACCOUNT_NAME);
-      SendTelegramMessage("ChatBot "+_Symbol+" EA started "+account_name+
-                          "\n MagicNumber:"+IntegerToString(InpMagicNumber)+
-                          "\nServer: " + AccountInfoString(ACCOUNT_SERVER)+
-                           ".\n Command:\n balance"+IntegerToString(InpMagicNumber)+
-                           "\n equity"+IntegerToString(InpMagicNumber)+
-                           "\n screenshot"+IntegerToString(InpMagicNumber)+
-                           " \n help "+"\n disable"+IntegerToString(InpMagicNumber)+
-                            "\n enable"+IntegerToString(InpMagicNumber));
+      SendTelegramMessage(help);
       
    }
    if(StringFind(json, "\"text\":\"disable"+IntegerToString(InpMagicNumber)+"\"") >= 0)
@@ -1339,8 +1309,110 @@ void ProcessMessage(string json)
       SendTelegramMessage("EA enabled successfully");
       Draw();
    }
+   if(StringFind(json, "\"text\":\"closeposition"+IntegerToString(InpMagicNumber)+"\"") >= 0)
+   {
+       ClosePositions();
+      SendTelegramMessage(_Symbol+"Position Closed successfully No position ");
+      Draw();
+   }
+  
+       
+    string magic = IntegerToString(InpMagicNumber);
+
+       UpdateDoubleSetting(
+         json,
+         "finishProfit" + magic,
+         "finishProfit",
+         finishProfit
+      );
+      
+      UpdateDoubleSetting(
+         json,
+         "newPercentLot" + magic,
+         "newPercentLot",
+         newPercentLot
+      );
+      
+      UpdateDoubleSetting(
+         json,
+         "riskincrement" + magic,
+         "riskincrement",
+         riskincrement
+      );
+      
+      UpdateDoubleSetting(
+         json,
+         "profitpercenttarget" + magic,
+         "profitpercenttarget",
+         profitpercenttarget
+      );
+      
+      UpdateDoubleSetting(
+         json,
+         "losspercentlimit" + magic,
+         "losspercentlimit",
+         losspercentlimit
+      );
+      
+      UpdateDoubleSetting(
+         json,
+         "maxdrawdown" + magic,
+         "maxdrawdown",
+         maxdrawdown
+      );
+      
+      UpdateDoubleSetting(
+         json,
+         "startCapital" + magic,
+         "startCapital",
+         startCapital
+      ); 
+   
+        
   
 }
+bool UpdateDoubleSetting(string json,
+                         string command,
+                         string name,
+                         double &variable)
+   {
+      if(StringFind(json, command + "=") < 0)
+         return false;
+   
+      string value = ExtractCommandValue(json, command);
+   
+      if(value == "")
+         return false;
+   
+      variable = StringToDouble(value);
+   
+      SendTelegramMessage(
+         _Symbol + " " + name +
+         " set to " +
+         DoubleToString(variable, 2)
+      );
+   
+      Draw();
+   
+      return true;
+   }
+   
+   string ExtractCommandValue(string text, string command)
+   {
+      int pos = StringFind(text, command + "=");
+   
+      if(pos < 0)
+         return "";
+   
+      int start = pos + StringLen(command) + 1;
+   
+      int end = StringFind(text, "\"", start);
+   
+      if(end < 0)
+         return "";
+   
+      return StringSubstr(text, start, end - start);
+   }
 bool TakeScreenshot()
 {
 
