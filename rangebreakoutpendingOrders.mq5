@@ -132,6 +132,7 @@ string help="ChatBot "+_Symbol+" EA started \n Account: "+AccountInfoString(ACCO
                            "\n equity"+
                            "\n screenshot"+
                            " \n help "+
+                           "\n status" + IntegerToString(InpMagicNumber)+
                            "\n disable"+InpMagicNumber+
                            "\n closeposition"+InpMagicNumber+
                            "\n newPercentLot"+InpMagicNumber+
@@ -192,7 +193,7 @@ int OnInit()
    );
    
   
-   
+   BuildHistory();
 
    Draw();
        //graph code
@@ -1143,6 +1144,8 @@ void Draw()
    canvas.TextOut(30, 15, text, ColorToARGB(clrWhite));
    string alloweddd="Max Allowed DD: -"+DoubleToString(maxdrawdown,1)+"% currentDD %:- "+DoubleToString(peak_dd_percent,2)+" EnableEA: "+enableEA+" Risk %:"+DoubleToString(newPercentLot,2);
    canvas.TextOut(30, 30, alloweddd, ColorToARGB(clrWhite));
+   string accountName="Account Name: "+AccountInfoString(ACCOUNT_NAME);
+   canvas.TextOut(30, 45, accountName, ColorToARGB(clrWhite));
    
    int ddline = H - (int)((peak_equity-min_profit) / chart_range * (H - 20)) - 20;
    Print("peak_equity ",peak_equity," min_profit: ",min_profit," max_profit: ",max_profit);
@@ -1283,6 +1286,27 @@ void ProcessMessage(string json)
          AccountInfoString(ACCOUNT_NAME)+" Equity = " +
          DoubleToString(equity, 2)
       );
+   }
+   string cmd = "status" + IntegerToString(InpMagicNumber);
+
+   if(StringFind(json, cmd) >= 0)
+   {
+      string msg =
+         "EA Settings\n"
+         "enableEA: " + (enableEA ? "true" : "false") + "\n"
+         "newPercentLot: " + DoubleToString(newPercentLot, 2) + "\n"
+         "running_profit: " + DoubleToString(running_profit, 2) + "\n"
+         "peak_equity: " + DoubleToString(peak_equity, 2) + "\n"
+         "peak_dd: " + DoubleToString(peak_dd, 2) + "\n"
+         "peak_dd_percent: " + DoubleToString(peak_dd_percent, 2) + "\n"
+         "riskincrement: " + DoubleToString(riskincrement, 2) + "\n"
+         "profitpercenttarget: " + DoubleToString(profitpercenttarget, 2) + "\n"
+         "losspercentlimit: " + DoubleToString(losspercentlimit, 2) + "\n"
+         "maxdrawdown: " + DoubleToString(maxdrawdown, 2) + "\n"
+         "startCapital: " + DoubleToString(startCapital, 2) + "\n"
+         "finishProfit: " + DoubleToString(finishProfit, 2);
+   
+      SendTelegramMessage(msg);
    }
    if(StringFind(json, "\"text\":\"screenshot\"") >= 0)
    {
@@ -1542,4 +1566,57 @@ bool SendPhotoToTelegram(string file_name)
    Print(response);
 
    return true;
+}
+void BuildHistory()
+{
+    // RESET STATE
+   running_profit = 0;
+   peak_equity = 0;
+   peak_dd = 0;
+
+   min_profit = 0;
+   max_profit = 0;
+
+   ArrayFree(cumulative_profit_array);
+   HistorySelect(0, TimeCurrent());
+
+   int total = HistoryDealsTotal();
+
+   for(int i = 0; i < total; i++)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+
+      if((int)HistoryDealGetInteger(deal, DEAL_ENTRY) != DEAL_ENTRY_OUT)
+         continue;
+
+      
+      ulong magicNo=HistoryDealGetInteger(deal,DEAL_MAGIC);
+      
+      if(magicNo==InpMagicNumber){
+      Print("MagicNo: ",magicNo);
+      double profit = HistoryDealGetDouble(deal, DEAL_PROFIT);
+
+      running_profit += profit;
+
+      // update bounds (NO rescaling loop later)
+      if(running_profit > max_profit) max_profit = running_profit;
+      if(running_profit < min_profit) min_profit = running_profit;
+
+      // store point
+      int s = ArraySize(cumulative_profit_array);
+      ArrayResize(cumulative_profit_array, s + 1);
+      cumulative_profit_array[s] = running_profit;
+      
+      // 1. update peak equity
+      if(running_profit > peak_equity)
+         peak_equity = running_profit;
+      
+      // 2. compute drawdown
+       double current_dd = peak_equity - running_profit;
+      
+      // 3. track worst drawdown
+      if(current_dd > peak_dd)
+         peak_dd = current_dd;  
+       }  
+   }
 }
