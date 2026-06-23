@@ -1,4 +1,4 @@
-//+------------------------------------------------------------------+
+﻿//+------------------------------------------------------------------+
 //|                                                 MAPullBackEA.mq5 |
 //|                                  Copyright 2025, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
@@ -11,6 +11,8 @@
 //+------------------------------------------------------------------+
 #include<Trade/Trade.mqh>
 #include<Trade/PositionInfo.mqh>
+#property script_show_inputs
+#include <Canvas/Canvas.mqh>
 //+------------------------------------------------------------------+
 //|inputs                                                            |
 //+------------------------------------------------------------------+
@@ -34,6 +36,26 @@ input int          InpPeriodATR =21;       //ATR period
 //+------------------------------------------------------------------+
 //|Global Variable                                                   |
 //+------------------------------------------------------------------+
+double running_profit = 0;
+double cumulative_profit_array[];
+
+double peak_equity = 0;
+double peak_dd = 0;
+
+
+double min_profit = 0;
+double max_profit = 0;
+bool dashboard_visible = true;
+
+int W = 650;
+int H = 300;
+
+CCanvas canvas;
+string CANVAS_NAME = "DASH_CANVAS";
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+
 int handleMA;
 int handleATR;
 double bufferMA[];
@@ -42,11 +64,43 @@ MqlTick tick;
 CTrade trade;
 CPositionInfo position;
 
+bool enableEA=true;
+double newPercentLot;
+double peak_dd_percent=0.0;
+
+double riskincrement=0;
+double profitpercenttarget=0;
+double losspercentlimit=0;
+double maxdrawdown=0;
+double startCapital=0;
+double finishProfit=0;
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
   {
+    
+   newPercentLot=InpLotsize;
+   riskincrement=0;
+   profitpercenttarget=1000;
+   losspercentlimit=-100;
+   maxdrawdown=21;
+   startCapital=100;
+   finishProfit=10000; 
+   
+    canvas.CreateBitmapLabel(
+      0, 0,
+      "DASH",
+      W,
+      H,
+         COLOR_FORMAT_ARGB_NORMALIZE
+      );
+   
+    BuildHistory();
+
+    Draw();
+   
    //check user inputs
    if(!CheckInputs()){ return INIT_PARAMETERS_INCORRECT; }
    //set magic number to trade object
@@ -165,6 +219,30 @@ void OnTick()
 //| Custom Functions                                                 |
 //+------------------------------------------------------------------+
 
+void OnChartEvent(const int id,
+                  const long &lparam,
+                  const double &dparam,
+                  const string &sparam)
+{
+   if(id == CHARTEVENT_KEYDOWN)
+   {
+      if(lparam == 'D') // press D
+      {
+         dashboard_visible = !dashboard_visible;
+
+         if(dashboard_visible){
+            canvas.Resize(W, H);
+            canvas.Erase(ColorToARGB(clrBlack));
+            Draw();
+         }   
+         else{
+            canvas.Resize(1, 1); // effectively invisible
+         }   
+        Print("Toggle: ",dashboard_visible);    
+      }
+   }
+}
+
 bool CheckInputs()
 {
   if(InpMagicnumber<=0)
@@ -282,4 +360,257 @@ bool ClosePositions(int all_buy_sell)
        }
     }
   return true;
+}
+
+void BuildHistory()
+{
+    // RESET STATE
+   running_profit = 0;
+   peak_equity = 0;
+   peak_dd = 0;
+
+   min_profit = 0;
+   max_profit = 0;
+
+   ArrayFree(cumulative_profit_array);
+   HistorySelect(0, TimeCurrent());
+
+   int total = HistoryDealsTotal();
+
+   for(int i = 0; i < total; i++)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+
+      if((int)HistoryDealGetInteger(deal, DEAL_ENTRY) != DEAL_ENTRY_OUT)
+         continue;
+
+      
+      ulong magicNo=HistoryDealGetInteger(deal,DEAL_MAGIC);
+      
+      if(magicNo==InpMagicnumber){
+      Print("MagicNo: ",magicNo);
+      double profit = HistoryDealGetDouble(deal, DEAL_PROFIT);
+
+      running_profit += profit;
+
+      // update bounds (NO rescaling loop later)
+      if(running_profit > max_profit) max_profit = running_profit;
+      if(running_profit < min_profit) min_profit = running_profit;
+
+      // store point
+      int s = ArraySize(cumulative_profit_array);
+      ArrayResize(cumulative_profit_array, s + 1);
+      cumulative_profit_array[s] = running_profit;
+      
+      // 1. update peak equity
+      if(running_profit > peak_equity)
+         peak_equity = running_profit;
+      
+      // 2. compute drawdown
+       double current_dd = peak_equity - running_profit;
+      
+      // 3. track worst drawdown
+      if(current_dd > peak_dd)
+         peak_dd = current_dd;  
+       }  
+   }
+}
+
+
+void OnTradeTransaction(const MqlTradeTransaction& trans,
+                        const MqlTradeRequest& request,
+                        const MqlTradeResult& result)
+  {
+     
+    
+    //graph code
+    // 1. Only deal events
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD)
+      return;
+
+   ulong mydeal = trans.deal;
+   if(mydeal == 0)
+      return;
+
+   // 2. Load history cache
+   HistorySelect(TimeCurrent() - (86400 * 30), TimeCurrent());
+
+   // FIX: You MUST select the deal first before calling HistoryDealGetInteger!
+   if(!HistoryDealSelect(mydeal))
+      return;
+
+   // 3. Only closing deals (Handles complete OUT and partial INOUT closing reversals)
+   long entryType = HistoryDealGetInteger(mydeal, DEAL_ENTRY);
+   if(entryType != DEAL_ENTRY_OUT && entryType != DEAL_ENTRY_INOUT)
+      return;
+
+   // 4. Extract Magic Number with Cascading Backups
+   long magicNo = HistoryDealGetInteger(mydeal, DEAL_MAGIC);
+   
+   // Fallback A: Trace the history of the specific position lifecycle to find the opening deal
+   if(magicNo == 0 && trans.position > 0)
+   {
+      if(HistorySelectByPosition(trans.position))
+      {
+         int totalDeals = HistoryDealsTotal();
+         for(int i = 0; i < totalDeals; i++)
+         {
+            ulong dealTicket = HistoryDealGetTicket(i);
+            if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) == DEAL_ENTRY_IN)
+            {
+               magicNo = HistoryDealGetInteger(dealTicket, DEAL_MAGIC);
+               break;
+            }
+         }
+      }
+   }
+   
+   // Fallback B: Look directly at the order ticket that executed this closure
+   if(magicNo == 0)
+   {
+      ulong closeOrderTicket = (ulong)HistoryDealGetInteger(mydeal, DEAL_ORDER);
+      if(HistoryOrderSelect(closeOrderTicket))
+      {
+         magicNo = HistoryOrderGetInteger(closeOrderTicket, ORDER_MAGIC);
+      }
+   }
+
+   // Fallback C: Scan history for the very first order setup using Position ID
+   if(magicNo == 0 && trans.position > 0)
+   {
+      ulong positionID = trans.position;
+      if(HistorySelectByPosition(positionID))
+      {
+         int totalOrders = HistoryOrdersTotal();
+         for(int i = 0; i < totalOrders; i++)
+         {
+            ulong orderTicket = HistoryOrderGetTicket(i);
+            if(HistoryOrderGetInteger(orderTicket, ORDER_POSITION_ID) == (long)positionID)
+            {
+               magicNo = HistoryOrderGetInteger(orderTicket, ORDER_MAGIC);
+               if(magicNo != 0) break;
+            }
+         }
+      }
+   }
+   
+   // 5. Execute calculations if the recovered Magic matches your EA input
+   Print("Hello Processed Magic: ", magicNo);
+   
+   if(magicNo == InpMagicnumber)
+   {
+      Print("ontrade MagicNo: ", magicNo);
+      double myprofit = HistoryDealGetDouble(mydeal, DEAL_PROFIT);
+      Print("ontrade Profit: ", myprofit);
+
+      // update running state
+      running_profit += myprofit;
+   
+      // update bounds (NO rescan loop)
+      if(running_profit > max_profit) max_profit = running_profit;
+      if(running_profit < min_profit) min_profit = running_profit;
+   
+      // append new point
+      int s = ArraySize(cumulative_profit_array);
+      ArrayResize(cumulative_profit_array, s + 1);
+      cumulative_profit_array[s] = running_profit;
+   
+      // 1. update peak equity
+      if(running_profit > peak_equity){
+      
+         peak_equity = running_profit;
+         
+         newPercentLot=newPercentLot+riskincrement;
+         Print("######## Risk increased automatically by ######",newPercentLot);
+        
+         }
+         
+      
+      // 2. compute drawdown
+      double current_dd = peak_equity - running_profit;
+      
+      
+      // 3. track worst drawdown
+      if(current_dd > peak_dd){
+         peak_dd = current_dd;
+         
+         
+         
+         newPercentLot=newPercentLot-riskincrement;
+         
+         Print("######## Risk Decreased automatically by ######",newPercentLot);
+          
+         }
+      //if(peak_equity>0)
+      {   
+         peak_dd_percent = (peak_dd/(startCapital+peak_equity))*100;
+      } 
+      Print("peak_equity: ",peak_equity," peak_dd: ",peak_dd," ratio of peakdd: ",(peak_dd/(startCapital+peak_equity)));
+       
+      if(peak_dd_percent >maxdrawdown)
+        {
+          enableEA=false;
+          
+          Print("========EA draw Limit hit========");
+        }    
+        
+      Draw();              // build chart
+      ChartRedraw();       // force refresh
+         
+      Print("Draw again ", running_profit, " profit: ", myprofit);
+   }
+    //graph code 
+   
+  }
+  
+  
+  
+  void Draw()
+{
+   canvas.Erase(ColorToARGB(clrBlack));
+
+   int n = ArraySize(cumulative_profit_array);
+
+   double chart_range  = max_profit - min_profit;
+   if(chart_range  == 0) chart_range  = 1;
+
+   if(n >= 2)
+   {
+      int prev_x = 0;
+      int prev_y = 0;
+
+      for(int i = 0; i < n; i++)
+      {
+         int x = (int)((double)i / (n - 1) * W);
+
+         double value = cumulative_profit_array[i];
+
+         int y = H - (int)((value - min_profit) / chart_range  * (H-20))-20;
+         
+         if(i > 0)
+            canvas.Line(prev_x, prev_y, x, y, ColorToARGB(clrWhite));
+            
+
+         prev_x = x;
+         prev_y = y;
+      }
+   }
+
+   // ✅ ALWAYS draw text (even if n < 2)
+   canvas.FontSet("Consolas", 14);
+
+   string text =
+      _Symbol+" Click 'D' to hide/show | PnL: " +
+      DoubleToString(startCapital+running_profit, 2)+" peak_equity: "+DoubleToString(startCapital+peak_equity,2)+" peak_dd: -"+DoubleToString(peak_dd,2);
+   Print("peak_equity: ",peak_dd);
+   canvas.TextOut(30, 15, text, ColorToARGB(clrWhite));
+   string alloweddd="Max Allowed DD: -"+DoubleToString(maxdrawdown,1)+"% currentDD %:- "+DoubleToString(peak_dd_percent,2)+" Risk %:"+DoubleToString(newPercentLot,2);
+   canvas.TextOut(30, 30, alloweddd, ColorToARGB(clrWhite));
+   string accountName="Account Name: "+AccountInfoString(ACCOUNT_NAME);
+   canvas.TextOut(30, 45, accountName, ColorToARGB(clrWhite));
+   
+   int ddline = H - (int)((peak_equity-min_profit) / chart_range * (H - 20)) - 20;
+   Print("peak_equity ",peak_equity," min_profit: ",min_profit," max_profit: ",max_profit);
+   //canvas.Line(0, ddline, W, ddline, ColorToARGB(clrBeige));
+   canvas.Update(true);
 }

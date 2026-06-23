@@ -114,7 +114,7 @@ RANGE_STRUCT range;
 MqlTick  lastTick;  
 CTrade trade;
 
-bool enableEA=false;
+bool enableEA=true;
 double newPercentLot;
 double peak_dd_percent=0.0;
 //chat variabe
@@ -232,15 +232,7 @@ void OnTick()
      double profitDay=profitOpen+profitClosed;
      
      
-         if(isNewsEventAhead())
-          {
-           Print("Danger news ahead!!!!....");
-           
-             if(EnableNews)
-              {
-              trade.PositionClose(_Symbol);
-             }
-         }
+         
      
      
      
@@ -1070,7 +1062,7 @@ bool isNewsEventAhead()
          if(event.importance==CALENDAR_IMPORTANCE_LOW)continue;
          if(event.importance==CALENDAR_IMPORTANCE_NONE)continue;
          
-         if(TimeCurrent()>=value[i].time-15*PeriodSeconds(PERIOD_M1) && TimeCurrent()<value[i].time+15*PeriodSeconds(PERIOD_M1))
+         if(TimeCurrent()>=value[i].time-3*PeriodSeconds(PERIOD_M1) && TimeCurrent()<value[i].time+3*PeriodSeconds(PERIOD_M1))
            {
             Print("News Ahead !!!!!!!");
             string msg;
@@ -1180,6 +1172,14 @@ void Draw()
 
 bool SendTelegramMessage(string text)
 {
+
+    // Don't send Telegram messages while backtesting
+   if(MQLInfoInteger(MQL_TESTER))
+   {
+      Print("Strategy Tester detected - Telegram message skipped.");
+      return(true);
+   }
+   
    string url=
       "https://api.telegram.org/bot"+
       BotToken+
@@ -1224,10 +1224,33 @@ bool SendTelegramMessage(string text)
 void OnTimer()
 {
    CheckTelegram();
+   
+   static int totalbars=iBars(_Symbol,PERIOD_M5);
+   int bars=iBars(_Symbol,PERIOD_M5);
+   if(totalbars!=bars)
+     {
+       totalbars=bars;
+          if(isNewsEventAhead())
+             {
+              Print("Danger news ahead!!!!....");
+              
+                if(EnableNews)
+                 {
+                 trade.PositionClose(_Symbol);
+                }
+            }
+     }    
 }
 
 void CheckTelegram()
 {
+   // Don't send Telegram messages while backtesting
+   if(MQLInfoInteger(MQL_TESTER))
+   {
+      Print("Strategy Tester detected - Telegram message skipped.");
+      return;
+   }
+
    string url =
       "https://api.telegram.org/bot" +
       BotToken +
