@@ -86,7 +86,7 @@ int OnInit()
    profitpercenttarget=1000;
    losspercentlimit=-100;
    maxdrawdown=21;
-   startCapital=100;
+   startCapital=287;
    finishProfit=10000; 
    
     canvas.CreateBitmapLabel(

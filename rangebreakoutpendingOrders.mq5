@@ -125,16 +125,21 @@ double losspercentlimit=0;
 double maxdrawdown=0;
 double startCapital=0;
 double finishProfit=0;
+bool   activeNews=true;
 string help="ChatBot "+_Symbol+" EA started \n Account: "+AccountInfoString(ACCOUNT_NAME)+
                           "\n MagicNumber:"+InpMagicNumber+
                           "\nServer: " + AccountInfoString(ACCOUNT_SERVER)+
                            ".\n Command:\n balance"+
                            "\n equity"+
+                           "\n News Alert: "+activeNews+
                            "\n screenshot"+
                            "\n magicno"+
                            " \n help "+
                            "\n status" + IntegerToString(InpMagicNumber)+
-                           "\n disable"+InpMagicNumber+
+                           "\n enable"+InpMagicNumber+
+                           "\n disable"+
+                           "\n enablenews"+
+                           "\n disablenews"+InpMagicNumber+
                            "\n closeposition"+InpMagicNumber+
                            "\n newPercentLot"+InpMagicNumber+
                            "\n riskincrement"+InpMagicNumber+
@@ -1064,12 +1069,15 @@ bool isNewsEventAhead()
          
          if(TimeCurrent()>=value[i].time-3*PeriodSeconds(PERIOD_M1) && TimeCurrent()<value[i].time+3*PeriodSeconds(PERIOD_M1))
            {
+           
+            if(activeNews){
             Print("News Ahead !!!!!!!");
             string msg;
 
             msg =
             "📰 HIGH IMPACT NEWS\n\n";
-            
+            msg += "Account name : " + AccountInfoString(ACCOUNT_NAME) + "\n";
+            msg += "MagicNo : " + IntegerToString(InpMagicNumber) + "\n";
             msg += "Event: " + event.name + "\n";
             msg += "Currency: " + country.currency + "\n";
             msg += "Importance: HIGH\n\n";
@@ -1084,7 +1092,9 @@ bool isNewsEventAhead()
             DoubleToString(value[i].actual_value/1000000.0,2);
             
             SendTelegramMessage(msg);
+             }
             return true;
+            
            }
          Print(event.name," => ", value[i].actual_value/1000000);
        }
@@ -1393,6 +1403,18 @@ void ProcessMessage(string json)
    {
        enableEA=true;
       SendTelegramMessage("EA enabled successfully");
+      Draw();
+   }
+   if(StringFind(json, "\"text\":\"disablenews\"") >= 0)
+   {
+       activeNews=false;
+      SendTelegramMessage("News disabled successfully");
+      Draw();
+   }
+   if(StringFind(json, "\"text\":\"enablenews\"") >= 0)
+   {
+       activeNews=true;
+      SendTelegramMessage("New enabled successfully");
       Draw();
    }
    if(StringFind(json, "\"text\":\"closeposition"+IntegerToString(InpMagicNumber)+"\"") >= 0)
