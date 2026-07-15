@@ -419,8 +419,8 @@ void ProcessMessage(string json)
    }
    if(StringFind(json, "\"text\":\"closeposition"+IntegerToString(InpMagicNumber)+"\"") >= 0)
    {
+       ClosePosition(0);
        ClosePosition(1);
-       ClosePosition(2);
       SendTelegramMessage(_Symbol+"Position Closed successfully No position ");
       Draw();
    }
@@ -672,7 +672,13 @@ void BlockBlow()
 void OnTick()
   {
   
-  
+   if(!enableEA)
+     {
+       ClosePosition(0);
+       ClosePosition(1);
+       return;
+     }
+   
     double accountBalance=AccountInfoDouble(ACCOUNT_BALANCE);
      double accountEquity=AccountInfoDouble(ACCOUNT_EQUITY);
      double profitOpen=accountEquity-accountBalance;
