@@ -53,6 +53,7 @@ input TRIGGER_MODE InpTriggerMode=ONE_SIDED;
 input double DailyProfitTarget=20; //Daily Profit Target in %
 input double DailyLossStop=-10; //Daily Stop in %
 input bool Reversalbreakout=false;
+input int ReversalStopLossPips = 250;
 
 
 double profitClosed;
@@ -247,19 +248,11 @@ void OnTick()
              " Target Profit: ",DoubleToString((profitpercenttarget*0.01*AccountInfoDouble(ACCOUNT_BALANCE)),2),
              " Stop Loss : ",DoubleToString((losspercentlimit*0.01*AccountInfoDouble(ACCOUNT_BALANCE)),2));
              
-    if(profitDay >(profitpercenttarget*0.01*AccountInfoDouble(ACCOUNT_BALANCE)) || profitDay <(losspercentlimit*0.01*AccountInfoDouble(ACCOUNT_BALANCE))|| !enableEA)
+    if(profitDay >(profitpercenttarget*0.01*AccountInfoDouble(ACCOUNT_BALANCE)) || profitDay <(losspercentlimit*0.01*AccountInfoDouble(ACCOUNT_BALANCE)) || AccountInfoDouble(ACCOUNT_EQUITY)>=finishProfit || !enableEA)
       {
         ClosePositions();
       } 
-      
-     if(AccountInfoDouble(ACCOUNT_EQUITY)>=finishProfit)
-       {
-         for(int i=PositionsTotal()-1;i>=0;i--)
-          {
-            ulong posTicket=PositionGetTicket(i);
-            trade.PositionClose(posTicket);
-          }
-       }
+   
    
    SymbolInfoTick(_Symbol,lastTick);
    //range calculation
@@ -338,27 +331,45 @@ void CreatePendingOrder()
             double lots;
             
             
-            //create order
-            if(Reversalbreakout)
-            {
-               // SELL LIMIT (reversal from top)
-               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpStopLoss * 0.01, _Digits); // ABOVE
-               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpTakeProfit * 0.01, _Digits); // BELOW
-            
-               if(!CalculateLots(sl - entry, lots)) return;
-            
-               trade.SellLimit(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range reversal sell");
-            }
-            else
-            {
-               // BUY STOP (breakout)
-               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpStopLoss * 0.01, _Digits); // BELOW
-               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpTakeProfit * 0.01, _Digits); // ABOVE
-            
-               if(!CalculateLots(entry - sl, lots)) return;
-            
-               trade.BuyStop(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range breakout buy");
-            }
+                     // Create order
+         if(Reversalbreakout)
+         {
+            // SELL LIMIT (reversal from top)
+         
+            double pip = (_Digits == 3 || _Digits == 5) ? 10 * _Point : _Point;
+         
+            sl = ReversalStopLossPips == 0 ? 0
+               : NormalizeDouble(entry + ReversalStopLossPips * pip, _Digits);   // 250 pip SL
+         
+            tp = InpTakeProfit == 0 ? 0
+               : NormalizeDouble(entry - rangeSize * InpTakeProfit * 0.01, _Digits);
+         
+            if(!CalculateLots(sl - entry, lots))
+               return;
+         
+            trade.SellLimit(lots, entry, _Symbol, sl, tp,
+                            ORDER_TIME_SPECIFIED,
+                            range.close_time,
+                            "range reversal sell");
+         }
+         else
+         {
+            // BUY STOP (breakout)
+         
+            sl = InpStopLoss == 0 ? 0
+               : NormalizeDouble(entry - rangeSize * InpStopLoss * 0.01, _Digits);
+         
+            tp = InpTakeProfit == 0 ? 0
+               : NormalizeDouble(entry + rangeSize * InpTakeProfit * 0.01, _Digits);
+         
+            if(!CalculateLots(entry - sl, lots))
+               return;
+         
+            trade.BuyStop(lots, entry, _Symbol, sl, tp,
+                          ORDER_TIME_SPECIFIED,
+                          range.close_time,
+                          "range breakout buy");
+         }
           
         }
         
@@ -373,25 +384,43 @@ void CreatePendingOrder()
             double lots;
             
             if(Reversalbreakout)
-            {
-               // BUY LIMIT (reversal from bottom)
-               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpStopLoss * 0.01, _Digits); // BELOW
-               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpTakeProfit * 0.01, _Digits); // ABOVE
-            
-               if(!CalculateLots(entry - sl, lots)) return;
-            
-               trade.BuyLimit(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range reversal buy");
-            }
-            else
-            {
-               // SELL STOP (breakout)
-               sl = InpStopLoss == 0 ? 0 : NormalizeDouble(entry + rangeSize * InpStopLoss * 0.01, _Digits); // ABOVE
-               tp = InpTakeProfit == 0 ? 0 : NormalizeDouble(entry - rangeSize * InpTakeProfit * 0.01, _Digits); // BELOW
-            
-               if(!CalculateLots(sl - entry, lots)) return;
-            
-               trade.SellStop(lots, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, range.close_time, "range breakout sell");
-            }
+                  {
+                     // BUY LIMIT (reversal from bottom)
+                  
+                     double pip = (_Digits == 3 || _Digits == 5) ? 10 * _Point : _Point;
+                  
+                     sl = ReversalStopLossPips == 0 ? 0
+                        : NormalizeDouble(entry - ReversalStopLossPips * pip, _Digits);   // 250 pip SL
+                  
+                     tp = InpTakeProfit == 0 ? 0
+                        : NormalizeDouble(entry + rangeSize * InpTakeProfit * 0.01, _Digits);
+                  
+                     if(!CalculateLots(entry - sl, lots))
+                        return;
+                  
+                     trade.BuyLimit(lots, entry, _Symbol, sl, tp,
+                                    ORDER_TIME_SPECIFIED,
+                                    range.close_time,
+                                    "range reversal buy");
+                  }
+                  else
+                  {
+                     // SELL STOP (breakout)
+                  
+                     sl = InpStopLoss == 0 ? 0
+                        : NormalizeDouble(entry + rangeSize * InpStopLoss * 0.01, _Digits);
+                  
+                     tp = InpTakeProfit == 0 ? 0
+                        : NormalizeDouble(entry - rangeSize * InpTakeProfit * 0.01, _Digits);
+                  
+                     if(!CalculateLots(sl - entry, lots))
+                        return;
+                  
+                     trade.SellStop(lots, entry, _Symbol, sl, tp,
+                                    ORDER_TIME_SPECIFIED,
+                                    range.close_time,
+                                    "range breakout sell");
+                  }
          
         }  
     }
@@ -1053,37 +1082,6 @@ double CalculateDailyProfitClosed()
 }
 
 
-bool IsMonsterNews(string eventName)
-{
-   string name = StringToLower(eventName);
-
-   if(StringFind(name,"nonfarm")      >=0) return true; // NFP
-   if(StringFind(name,"non-farm")     >=0) return true;
-   if(StringFind(name,"payroll")      >=0) return true;
-
-   if(StringFind(name,"consumer price index") >=0) return true;
-   if(StringFind(name,"cpi") >=0) return true;
-
-   if(StringFind(name,"core cpi") >=0) return true;
-
-   if(StringFind(name,"fomc") >=0) return true;
-
-   if(StringFind(name,"interest rate") >=0) return true;
-   if(StringFind(name,"rate decision") >=0) return true;
-
-   if(StringFind(name,"fed chair") >=0) return true;
-   if(StringFind(name,"powell") >=0) return true;
-
-   if(StringFind(name,"core pce") >=0) return true;
-   if(StringFind(name,"pce") >=0) return true;
-
-   if(StringFind(name,"employment change") >=0) return true;
-   if(StringFind(name,"unemployment rate") >=0) return true;
-
-   if(StringFind(name,"gdp") >=0) return true;
-
-   return false;
-}
 
 bool isNewsEventAhead()
 {
@@ -1105,18 +1103,12 @@ bool isNewsEventAhead()
          if(StringFind(mysymbol,country.currency)<0)continue;
          if(event.importance==CALENDAR_IMPORTANCE_LOW)continue;
          if(event.importance==CALENDAR_IMPORTANCE_NONE)continue;
-         if(event.importance==CALENDAR_IMPORTANCE_MODERATE)continue;
-         //if(!IsMonsterNews(event.name)) continue;
-   
          
-         if(TimeCurrent()>=value[i].time-15*PeriodSeconds(PERIOD_M1) && TimeCurrent()<value[i].time+5*PeriodSeconds(PERIOD_M1))
+         if(TimeCurrent()>=value[i].time-3*PeriodSeconds(PERIOD_M1) && TimeCurrent()<value[i].time+3*PeriodSeconds(PERIOD_M1))
            {
            
             if(activeNews){
             Print("News Ahead !!!!!!!");
-            string newsTime = TimeToString(value[i].time,
-                  TIME_DATE|TIME_MINUTES);
-                  
             string msg;
 
             msg =
@@ -1124,7 +1116,6 @@ bool isNewsEventAhead()
             msg += "Account name : " + AccountInfoString(ACCOUNT_NAME) + "\n";
             msg += "MagicNo : " + IntegerToString(InpMagicNumber) + "\n";
             msg += "Event: " + event.name + "\n";
-            msg += "Time: " + newsTime + "\n";
             msg += "Currency: " + country.currency + "\n";
             msg += "Importance: HIGH\n\n";
             
